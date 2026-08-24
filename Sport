@@ -1,5 +1,9 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB (Versão estável com fallback)
+    Blue Lock - Sor_UmPlayer HUB (Com 2 Aimbots)
+    - Aimbot Personagem: o corpo vira para a bola
+    - Aimbot Câmera: a câmera vira para a bola
+    - Reach: aumenta a hitbox da bola
+    - ESP: mostra o alcance na bola
 ]]
 
 local _ENV = getgenv()
@@ -11,64 +15,31 @@ local replicatedStorage = game:GetService("ReplicatedStorage")
 -- Variáveis globais
 _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
-_ENV.AutoLockBall = false
-_ENV.AimbotMode = "Personagem"
+_ENV.AutoLockBall = false      -- Aimbot Personagem
+_ENV.AutoLockCamera = false    -- Aimbot Câmera
 _ENV.ShowESP = false
-
--- =============================================
--- CARREGAMENTO DO WINDUI COM FALLBACK
--- =============================================
-
-local WindUI = nil
-local Window = nil
-local hubCarregado = false
-
--- Tenta carregar o WindUI de várias fontes
-local function carregarWindUI()
-    local urls = {
-        "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
-        "https://raw.githubusercontent.com/Footagesus/WindUI/main/main.lua",
-        "https://pastebin.com/raw/xxxxxxxx" -- coloque um link alternativo se necessário
-    }
-    for _, url in ipairs(urls) do
-        local sucesso, resultado = pcall(function()
-            return loadstring(game:HttpGet(url))()
-        end)
-        if sucesso and type(resultado) == "table" then
-            return resultado
-        end
-    end
-    return nil
-end
-
-pcall(function()
-    WindUI = carregarWindUI()
-    if WindUI then
-        Window = WindUI:CreateWindow({
-            Title = "🌟 Sor_UmPlayer HUB 🌟",
-            Icon = "rbxassetid://10723343321",
-            Author = "made by Sor_Gostoso",
-            Folder = "CloudHub",
-            Size = UDim2.fromOffset(460, 320),
-            Transparent = true,
-            Theme = "Dark",
-            Resizable = true,
-            SideBarWidth = 200,
-            HideSearchBar = true,
-            ScrollBarEnabled = false,
-        })
-        hubCarregado = true
-        print("WindUI carregado com sucesso!")
-    else
-        warn("Falha ao carregar WindUI. A interface não estará disponível.")
-    end
-end)
 
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Sor_UmPlayer Hub",
-    Text = hubCarregado and "Hub carregado!" or "Erro ao carregar UI, mas scripts básicos funcionam.",
+    Text = "Bem-vindo! 2 Aimbots disponíveis.",
     Duration = 5
+})
+
+-- Carregar WindUI
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local Window = WindUI:CreateWindow({
+    Title = "🌟 Sor_UmPlayer HUB 🌟",
+    Icon = "rbxassetid://10723343321",
+    Author = "made by Sor_Gostoso",
+    Folder = "CloudHub",
+    Size = UDim2.fromOffset(460, 380),
+    Transparent = true,
+    Theme = "Dark",
+    Resizable = true,
+    SideBarWidth = 200,
+    HideSearchBar = true,
+    ScrollBarEnabled = false,
 })
 
 -- =============================================
@@ -76,6 +47,7 @@ game:GetService("StarterGui"):SetCore("SendNotification", {
 -- =============================================
 
 local function getBallAndHitbox()
+    -- Primeiro tenta o caminho conhecido
     local football = workspace:FindFirstChild("Football")
     if football then
         local hitbox = football:FindFirstChild("Hitbox")
@@ -85,6 +57,7 @@ local function getBallAndHitbox()
         return football, football
     end
 
+    -- Busca dinâmica
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
             local hitbox = obj:FindFirstChild("Hitbox")
@@ -121,13 +94,13 @@ local function isBallOccupied()
 end
 
 -- =============================================
--- AIMBOT
+-- AIMBOT PERSONAGEM (corpo vira para a bola)
 -- =============================================
 
-local aimbotConnection = nil
+local aimbotCharConnection = nil
 local hasBallValue = nil
 
-local function applyAimbot()
+local function updateAimbotCharacter()
     local character = player.Character
     if not character then return end
     local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -145,26 +118,72 @@ local function applyAimbot()
     local direction = (targetPos - rootPart.Position).Unit
     if direction.Magnitude < 0.1 then return end
 
-    if _ENV.AimbotMode == "Personagem" then
-        rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
-    elseif _ENV.AimbotMode == "Câmera" then
-        local currentPos = camera.CFrame.Position
-        local lookAt = Vector3.new(ball.Position.X, currentPos.Y, ball.Position.Z)
-        camera.CFrame = CFrame.new(currentPos, lookAt)
+    rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
+end
+
+local function startAimbotCharacter()
+    if aimbotCharConnection then return end
+    aimbotCharConnection = runService.RenderStepped:Connect(updateAimbotCharacter)
+end
+
+local function stopAimbotCharacter()
+    if aimbotCharConnection then
+        aimbotCharConnection:Disconnect()
+        aimbotCharConnection = nil
     end
 end
 
-local function startAimbot()
-    if aimbotConnection then return end
-    aimbotConnection = runService.RenderStepped:Connect(applyAimbot)
+-- =============================================
+-- AIMBOT CÂMERA (câmera vira para a bola)
+-- =============================================
+
+local aimbotCamConnection = nil
+local cameraSmoothness = 8 -- Suavidade da câmera (mais alto = mais rápido)
+
+local function updateAimbotCamera()
+    local character = player.Character
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local ball = getBallPart()
+    if not ball then return end
+
+    if hasBallValue and hasBallValue.Value == true then
+        return
+    end
+
+    -- Posição da câmera atual
+    local camPos = camera.CFrame.Position
+    -- Posição alvo (bola)
+    local targetPos = ball.Position + Vector3.new(0, 2, 0) -- Um pouco acima da bola
+    
+    -- Calcula a direção
+    local direction = (targetPos - camPos).Unit
+    if direction.Magnitude < 0.1 then return end
+    
+    -- Cria um novo CFrame para a câmera olhando para a bola
+    local targetCFrame = CFrame.new(camPos, targetPos)
+    
+    -- Aplica suavidade (interpolação linear)
+    camera.CFrame = camera.CFrame:Lerp(targetCFrame, 1 / cameraSmoothness)
 end
 
-local function stopAimbot()
-    if aimbotConnection then
-        aimbotConnection:Disconnect()
-        aimbotConnection = nil
+local function startAimbotCamera()
+    if aimbotCamConnection then return end
+    aimbotCamConnection = runService.RenderStepped:Connect(updateAimbotCamera)
+end
+
+local function stopAimbotCamera()
+    if aimbotCamConnection then
+        aimbotCamConnection:Disconnect()
+        aimbotCamConnection = nil
     end
 end
+
+-- =============================================
+-- DETECTAR HASBALL (para ambos os aimbots)
+-- =============================================
 
 local function setupHasBall()
     local model = workspace:FindFirstChild(player.Name)
@@ -185,20 +204,22 @@ local function setupHasBall()
     if hasBallValue then
         hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
             if hasBallValue.Value then
-                print("Aimbot pausado: você pegou a bola.")
-                if _ENV.AutoLockBall then stopAimbot() end
+                print("Aimbots pausados: você pegou a bola.")
+                if _ENV.AutoLockBall then stopAimbotCharacter() end
+                if _ENV.AutoLockCamera then stopAimbotCamera() end
             else
-                print("Aimbot ativado: você perdeu a bola.")
-                if _ENV.AutoLockBall then startAimbot() end
+                print("Aimbots ativados: você perdeu a bola.")
+                if _ENV.AutoLockBall then startAimbotCharacter() end
+                if _ENV.AutoLockCamera then startAimbotCamera() end
             end
         end)
     else
-        warn("HasBall não encontrado.")
+        warn("HasBall não encontrado. Os aimbots podem não funcionar corretamente.")
     end
 end
 
 -- =============================================
--- REACH
+-- REACH (aumentar a hitbox da bola)
 -- =============================================
 
 local reachLoop = nil
@@ -238,7 +259,7 @@ local function stopReachLoop()
 end
 
 -- =============================================
--- ESP
+-- ESP (esfera ao redor da hitbox da bola)
 -- =============================================
 
 local espSphere = nil
@@ -357,124 +378,123 @@ local function fireShoot(targetPos)
 end
 
 -- =============================================
--- INTERFACE (apenas se o hub carregou)
+-- INTERFACE (WindUI)
 -- =============================================
 
-if hubCarregado and Window then
-    local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
-    local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
+local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
+local sectionMain = mainTab:Section({ Title = "Aimbot Options", TextXAlignment = "Left" })
 
-    -- Toggle Aimbot
-    sectionMain:Toggle({
-        Title = "Aimbot",
-        Desc = "Ativa/Desativa o Aimbot",
-        Callback = function(state)
-            _ENV.AutoLockBall = state
-            if state then
-                if not hasBallValue then setupHasBall() end
-                startAimbot()
-            else
-                stopAimbot()
-            end
+-- Aimbot Personagem
+sectionMain:Toggle({
+    Title = "Aimbot Personagem",
+    Desc = "O corpo do personagem vira para a bola",
+    Callback = function(state)
+        _ENV.AutoLockBall = state
+        if state then
+            if not hasBallValue then setupHasBall() end
+            startAimbotCharacter()
+        else
+            stopAimbotCharacter()
         end
-    })
+    end
+})
 
-    -- Dropdown Aimbot
-    sectionMain:Dropdown({
-        Title = "Selecione o Aimbot",
-        Values = {"Personagem", "Câmera"},
-        Callback = function(v)
-            _ENV.AimbotMode = v
-            print("Modo aimbot alterado para: " .. v)
+-- Aimbot Câmera
+sectionMain:Toggle({
+    Title = "Aimbot Câmera",
+    Desc = "A câmera vira para a bola (suave)",
+    Callback = function(state)
+        _ENV.AutoLockCamera = state
+        if state then
+            if not hasBallValue then setupHasBall() end
+            startAimbotCamera()
+        else
+            stopAimbotCamera()
         end
-    })
+    end
+})
 
-    -- Infinite Stamina
-    sectionMain:Button({
-        Title = "Infinite Stamina",
-        Desc = "Mantém a stamina em 100",
-        Callback = function()
-            startStamina()
+-- Seção de Alcance
+local sectionReach = mainTab:Section({ Title = "Legit Reach", TextXAlignment = "Left" })
+
+sectionReach:Slider({
+    Title = "Reach Distance",
+    Desc = "Tamanho da hitbox da bola (Max 40)",
+    Step = 1,
+    Value = { Min = 1, Max = 40, Default = 20 },
+    Callback = function(value)
+        _ENV.MagnetRange = value
+        if _ENV.MagnetAtivo then
+            applyReach()
         end
-    })
+    end
+})
 
-    -- Dropdown Select Team
-    sectionMain:Dropdown({
-        Title = "Select your team",
-        Values = {"Home", "Away"},
-        Callback = function(v)
-            selectedOption = v
+sectionReach:Toggle({
+    Title = "Enable Reach",
+    Desc = "Aumenta a hitbox da bola",
+    Callback = function(state)
+        _ENV.MagnetAtivo = state
+        if state then
+            startReachLoop()
+        else
+            stopReachLoop()
         end
-    })
+    end
+})
 
-    -- Score Goal
-    sectionMain:Button({
-        Title = "Score Goal",
-        Desc = "Faz um gol automático",
-        Callback = function()
-            if not selectedOption then
-                warn("Selecione um time primeiro!")
-                return
-            end
-            local targetPos = selectedOption == "Home" and Vector3.new(-234, 11, -47) or Vector3.new(311, 11, -50)
-            storeOriginalPosition()
-            teleportTo(targetPos)
-            task.wait(0.2)
-            fireShoot(targetPos)
-            task.wait(0.2)
-            if originalPosition then
-                teleportTo(originalPosition)
-            end
+sectionReach:Toggle({
+    Title = "Show Reach ESP",
+    Desc = "Mostra a área da hitbox na bola",
+    Callback = function(state)
+        _ENV.ShowESP = state
+        if state then
+            startESPLoop()
+        else
+            stopESPLoop()
         end
-    })
+    end
+})
 
-    -- Seção Reach
-    local sectionReach = mainTab:Section({ Title = "Legit Reach", TextXAlignment = "Left" })
+-- Seção Extras
+local sectionExtras = mainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
-    sectionReach:Slider({
-        Title = "Reach Distance",
-        Desc = "Tamanho da hitbox da bola (Max 40)",
-        Step = 1,
-        Value = { Min = 1, Max = 40, Default = 20 },
-        Callback = function(value)
-            _ENV.MagnetRange = value
-            if _ENV.MagnetAtivo then
-                applyReach()
-            end
+sectionExtras:Button({
+    Title = "Infinite Stamina",
+    Desc = "Mantém a stamina em 100",
+    Callback = function()
+        startStamina()
+    end
+})
+
+sectionExtras:Dropdown({
+    Title = "Select your team",
+    Desc = "Escolha Home ou Away",
+    Options = {"Home", "Away"},
+    Callback = function(option)
+        selectedOption = option
+    end
+})
+
+sectionExtras:Button({
+    Title = "Score Goal",
+    Desc = "Faz um gol automático",
+    Callback = function()
+        if not selectedOption then
+            warn("Selecione um time primeiro!")
+            return
         end
-    })
-
-    sectionReach:Toggle({
-        Title = "Enable Reach",
-        Desc = "Aumenta a hitbox da bola",
-        Callback = function(state)
-            _ENV.MagnetAtivo = state
-            if state then
-                startReachLoop()
-            else
-                stopReachLoop()
-            end
+        local targetPos = selectedOption == "Home" and Vector3.new(-234, 11, -47) or Vector3.new(311, 11, -50)
+        storeOriginalPosition()
+        teleportTo(targetPos)
+        task.wait(0.2)
+        fireShoot(targetPos)
+        task.wait(0.2)
+        if originalPosition then
+            teleportTo(originalPosition)
         end
-    })
-
-    sectionReach:Toggle({
-        Title = "Show Reach ESP",
-        Desc = "Mostra a área da hitbox na bola",
-        Callback = function(state)
-            _ENV.ShowESP = state
-            if state then
-                startESPLoop()
-            else
-                stopESPLoop()
-            end
-        end
-    })
-
-    print("Interface criada com sucesso!")
-else
-    print("Hub sem interface, mas funções básicas podem ser usadas via console.")
-    -- Você pode adicionar comandos manuais aqui se quiser
-end
+    end
+})
 
 -- =============================================
 -- INICIALIZAÇÃO
@@ -484,4 +504,4 @@ setupHasBall()
 task.wait(1)
 applyReach()
 
-print("Script carregado! (Hub: " .. (hubCarregado and "OK" or "FALHOU") .. ")")
+print("✅ Script carregado! 2 Aimbots disponíveis.")
