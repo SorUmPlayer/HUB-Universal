@@ -1,0 +1,271 @@
+local _ENV = getgenv()
+local player = game.Players.LocalPlayer
+local camera = game.Workspace.CurrentCamera
+local target = game.Workspace:WaitForChild("Football")
+local runService = game:GetService("RunService")
+local ultimoChute = 0
+
+-- Variáveis de controle do Magnet
+_ENV.MagnetRange = 20
+_ENV.MagnetAtivo = false
+
+-- Notificação Inicial
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCore("SendNotification",{Title="Sor_UmPlayer Hub",Text="Bem-vindo, jogador!",Duration=5})
+
+-- Carregando WindUI
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title = "🌟 Sor_UmPlayer HUB 🌟",
+    Icon = "rbxassetid://10723343321",
+    Author = "made by Sor_Gostoso",
+    Folder = "CloudHub",
+    Size = UDim2.fromOffset(460, 320),
+    Transparent = true,
+    Theme = "Dark",
+    Resizable = true,
+    SideBarWidth = 200,
+    HideSearchBar = true,
+    ScrollBarEnabled = false,
+})
+
+--- Variaveis de Controle ---
+local connection
+local hasBall
+local originalPosition
+local selectedOption = nil
+
+--- Funções de Suporte (Lógica Original) ---
+local function updateView()
+    if hasBall and hasBall.Value == false and player.Character and target then
+        local character = player.Character
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChild("Humanoid")
+
+        if rootPart and humanoid then
+            local targetPosition = Vector3.new(target.Position.X, rootPart.Position.Y, target.Position.Z)
+            local direction = (targetPosition - rootPart.Position).Unit
+            rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
+            camera.CFrame = CFrame.new(
+                rootPart.Position - direction * 10 + Vector3.new(0, 5, 0), 
+                rootPart.Position
+            )
+        end
+    end
+end
+
+local function onHasBallChanged()
+    if hasBall.Value then
+        print("Aimbot desativado: jogador pegou a bola.")
+    else
+        print("Aimbot ativado: jogador sem a bola.")
+    end
+end
+
+local function storeOriginalPosition()
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        originalPosition = player.Character.HumanoidRootPart.Position
+    end
+end
+
+local function teleportToPosition(position)
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(position)
+    end
+end
+
+--- Funções de Suporte (Magnet / Reach) ---
+local function getBall()
+    local f = game.Workspace:FindFirstChild("Football")
+    return f and f:FindFirstChild("Hitbox")
+end
+
+local function bolaOcupada()
+    local hitbox = getBall()
+    if not hitbox then return false end
+    
+    local pai = hitbox.Parent
+    if pai:FindFirstChild("Humanoid") and pai.Name ~= player.Name then
+        return true
+    end
+    
+    if hitbox:IsDescendantOf(workspace:FindFirstChild("AI")) then
+        return true
+    end
+    
+    return false
+end
+
+--- Tabs ---
+local MainTab = Window:Tab({
+    Title = "MAIN",
+    Icon = "home",
+})
+
+local SectionMain = MainTab:Section({ 
+    Title = "Main Options",
+    TextXAlignment = "Left"
+})
+
+--- UI Elements (Originais) ---
+
+SectionMain:Toggle({
+    Title = "Auto Lock Ball",
+    Desc = "Look At Ball Automatically",
+    Callback = function(Value)
+        _ENV.AutoLockBall = Value
+
+        if _ENV.AutoLockBall then
+            local model = game.Workspace:FindFirstChild(player.Name)
+            local valuesFolder = model and model:FindFirstChild("Values")
+            hasBall = valuesFolder and valuesFolder:FindFirstChild("HasBall")
+
+            if hasBall then
+                hasBall:GetPropertyChangedSignal("Value"):Connect(onHasBallChanged)
+                connection = runService.RenderStepped:Connect(updateView)
+                onHasBallChanged()
+            else
+                warn("Valor 'HasBall' não encontrado.")
+            end
+        else
+            if connection then
+                connection:Disconnect()
+                connection = nil
+            end
+        end
+    end
+})
+
+SectionMain:Button({
+    Title = "Infinite Stamina",
+    Desc = "No Decrease In Stamina",
+    Callback = function()
+        task.spawn(function()
+            while true do
+                if player:FindFirstChild("PlayerStats") and player.PlayerStats:FindFirstChild("Stamina") then
+                    player.PlayerStats.Stamina.Value = 100
+                end
+                task.wait()
+            end
+        end)
+    end
+})
+
+SectionMain:Dropdown({
+    Title = "Select your team",
+    Desc = "Choose Home or Away",
+    Options = {"Home", "Away"},
+    Callback = function(option)
+        selectedOption = option
+    end
+})
+
+SectionMain:Button({
+    Title = "Score Goal",
+    Desc = "score a goal xd",
+    Callback = function()
+        if selectedOption == "Home" then
+            storeOriginalPosition()
+            teleportToPosition(Vector3.new(-234, 11, -47))
+            task.wait(0.2)
+            local args = { [1] = 110, [4] = Vector3.new(-234, 11, -47) }
+            game:GetService("ReplicatedStorage").Packages.Knit.Services.BallService.RE.Shoot:FireServer(unpack(args))
+            task.wait(0.2)
+            teleportToPosition(originalPosition)
+        elseif selectedOption == "Away" then
+            storeOriginalPosition()
+            teleportToPosition(Vector3.new(311, 11, -50))
+            task.wait(0.2)
+            local args = { [1] = 110, [4] = Vector3.new(311, 11, -50) }
+            game:GetService("ReplicatedStorage").Packages.Knit.Services.BallService.RE.Shoot:FireServer(unpack(args))
+            task.wait(0.2)
+            teleportToPosition(originalPosition)
+        else
+            warn("Selecione um time primeiro!")
+        end
+    end
+})
+
+--- Nova Seção: Legit Reach ---
+local SectionReach = MainTab:Section({ 
+    Title = "Legit Reach (Anti-Ban)",
+    TextXAlignment = "Left"
+})
+
+SectionReach:Slider({
+    Title = "Reach Distance",
+    Desc = "Alcance máximo seguro (Max 40)",
+    Step = 1,
+    Value = { Min = 1, Max = 40, Default = 20 },
+    Callback = function(value)
+        _ENV.MagnetRange = value
+    end
+})
+
+SectionReach:Toggle({
+    Title = "Visual Hitbox Reach",
+    Desc = "Aumenta a hitbox localmente (Seguro)",
+    Callback = function(state)
+        _ENV.MagnetAtivo = state
+        
+        task.spawn(function()
+            while _ENV.MagnetAtivo do
+                local hitbox = getBall()
+                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                
+                if hitbox and hrp then
+                    if not bolaOcupada() and (tick() - ultimoChute > 3) then
+                        if hitbox.AssemblyLinearVelocity.Magnitude > 40 then
+                            ultimoChute = tick()
+                        else
+                            local dist = (hrp.Position - hitbox.Position).Magnitude
+                            if dist <= _ENV.MagnetRange then
+                                hitbox.Size = Vector3.new(_ENV.MagnetRange, _ENV.MagnetRange, _ENV.MagnetRange)
+                                hitbox.CanCollide = false
+                                
+                                if firetouchinterest then
+                                    firetouchinterest(hrp, hitbox, 0)
+                                    task.wait()
+                                    firetouchinterest(hrp, hitbox, 1)
+                                end
+                            end
+                        end
+                    else
+                        hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
+                    end
+                end
+                task.wait(0.1)
+            end
+            
+            local hitbox = getBall()
+            if hitbox then hitbox.Size = Vector3.new(1.4, 1.4, 1.4) end
+        end)
+    end
+})
+
+SectionReach:Toggle({
+    Title = "Mostrar Área (ESP)",
+    Desc = "Ver o tamanho da sua zona de alcance",
+    Callback = function(state)
+        _ENV.ShowESP = state
+        task.spawn(function()
+            while _ENV.ShowESP do
+                local hitbox = getBall()
+                if hitbox then
+                    local sphere = hitbox:FindFirstChild("ReachVisual") or Instance.new("SelectionSphere")
+                    sphere.Name = "ReachVisual"
+                    sphere.Adornee = hitbox
+                    sphere.Parent = hitbox
+                    sphere.Color3 = Color3.fromRGB(0, 255, 100)
+                    sphere.Transparency = 0.8
+                end
+                task.wait(0.5)
+            end
+            local hitbox = getBall()
+            if hitbox and hitbox:FindFirstChild("ReachVisual") then
+                hitbox.ReachVisual:Destroy()
+            end
+        end)
+    end
+})
