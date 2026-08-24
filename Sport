@@ -1,8 +1,9 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB (Reescrito)
-    - Aimbot: olha para a bola sem teleportar
-    - Reach: aumenta a hitbox da bola (não move a bola)
-    - ESP: esfera mostrando o alcance na bola
+    Blue Lock - Sor_UmPlayer HUB
+    - Aimbot Personagem (gira o corpo)
+    - Aimbot Câmera (mira a câmera)
+    - Reach: aumenta hitbox da bola
+    - ESP na hitbox da bola
 ]]
 
 local _ENV = getgenv()
@@ -16,11 +17,12 @@ _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
 _ENV.AutoLockBall = false
 _ENV.ShowESP = false
+_ENV.AimbotMode = "Personagem"  -- "Personagem" ou "Camera"
 
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Sor_UmPlayer Hub",
-    Text = "Bem-vindo! Script recarregado.",
+    Text = "Script carregado com 2 modos de aimbot!",
     Duration = 5
 })
 
@@ -45,33 +47,27 @@ local Window = WindUI:CreateWindow({
 -- =============================================
 
 local function getBallAndHitbox()
-    -- Primeiro tenta o caminho conhecido
     local football = workspace:FindFirstChild("Football")
     if football then
         local hitbox = football:FindFirstChild("Hitbox")
         if hitbox and hitbox:IsA("BasePart") then
             return football, hitbox
         end
-        -- Se não tiver Hitbox, usa o próprio Football como hitbox
         return football, football
     end
 
-    -- Busca dinâmica por qualquer parte com nome contendo "ball" ou "football"
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
-            -- Verifica se tem filho Hitbox
             local hitbox = obj:FindFirstChild("Hitbox")
             if hitbox and hitbox:IsA("BasePart") then
                 return obj, hitbox
             end
-            -- Caso contrário, usa a própria parte
             return obj, obj
         end
     end
     return nil, nil
 end
 
--- Atualiza a referência da hitbox a cada chamada (caso a bola seja recriada)
 local function getHitbox()
     local _, hitbox = getBallAndHitbox()
     return hitbox
@@ -82,7 +78,6 @@ local function getBallPart()
     return ball
 end
 
--- Verifica se a bola está com outro jogador (ocupada)
 local function isBallOccupied()
     local hitbox = getHitbox()
     if not hitbox then return false end
@@ -90,7 +85,6 @@ local function isBallOccupied()
     if parent and parent:FindFirstChild("Humanoid") and parent.Name ~= player.Name then
         return true
     end
-    -- Verifica se está na mão de IA
     if hitbox:IsDescendantOf(workspace:FindFirstChild("AI")) then
         return true
     end
@@ -98,34 +92,51 @@ local function isBallOccupied()
 end
 
 -- =============================================
--- AIMBOT (somente rotação, sem mover o personagem)
+-- AIMBOT (dois modos)
 -- =============================================
 
 local aimbotConnection = nil
 local hasBallValue = nil
 
-local function updateAimbot()
+-- Aimbot Personagem
+local function aimbotPersonagem(ballPos, rootPart)
+    local targetPos = Vector3.new(ballPos.X, rootPart.Position.Y, ballPos.Z)
+    local direction = (targetPos - rootPart.Position).Unit
+    if direction.Magnitude < 0.1 then return end
+    rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
+end
+
+-- Aimbot Câmera
+local function aimbotCamera(ballPos)
     local character = player.Character
     if not character then return end
     local rootPart = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not rootPart or not humanoid then return end
+    if not rootPart then return end
+
+    -- Posição da câmera: atrás do jogador, apontando para a bola
+    local camOffset = Vector3.new(0, 5, 10) -- altura e distância
+    local camPos = rootPart.Position + camOffset
+    local lookAt = Vector3.new(ballPos.X, ballPos.Y + 1, ballPos.Z) -- foca um pouco acima do centro da bola
+    camera.CFrame = CFrame.new(camPos, lookAt)
+end
+
+local function updateAimbot()
+    if not _ENV.AutoLockBall then return end
+    if hasBallValue and hasBallValue.Value == true then return end
+
+    local character = player.Character
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
 
     local ball = getBallPart()
     if not ball then return end
 
-    -- Só olha se o jogador NÃO está com a bola
-    if hasBallValue and hasBallValue.Value == true then
-        return
+    if _ENV.AimbotMode == "Personagem" then
+        aimbotPersonagem(ball.Position, rootPart)
+    elseif _ENV.AimbotMode == "Camera" then
+        aimbotCamera(ball.Position)
     end
-
-    -- Direção para a bola (mantém altura do chão)
-    local targetPos = Vector3.new(ball.Position.X, rootPart.Position.Y, ball.Position.Z)
-    local direction = (targetPos - rootPart.Position).Unit
-    if direction.Magnitude < 0.1 then return end
-
-    -- Aplica rotação suave (opcional) – aqui apenas definimos o CFrame para olhar
-    rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
 end
 
 local function startAimbot()
@@ -140,7 +151,7 @@ local function stopAimbot()
     end
 end
 
--- Detecta se o jogador tem a bola (para desativar o aimbot)
+-- Detecta HasBall para pausar o aimbot
 local function setupHasBall()
     local model = workspace:FindFirstChild(player.Name)
     if model then
@@ -149,7 +160,6 @@ local function setupHasBall()
             hasBallValue = values:FindFirstChild("HasBall")
         end
     end
-    -- Fallback: procurar em qualquer lugar
     if not hasBallValue then
         for _, v in ipairs(workspace:GetDescendants()) do
             if v.Name == "HasBall" and v:IsA("BoolValue") and v.Parent and v.Parent.Name == player.Name then
@@ -184,12 +194,10 @@ local function applyReach()
     if not hitbox then return end
 
     if _ENV.MagnetAtivo then
-        -- Redimensiona a hitbox para o tamanho definido
         local range = _ENV.MagnetRange
         hitbox.Size = Vector3.new(range, range, range)
-        hitbox.CanCollide = false -- evita que a bola trave em objetos
+        hitbox.CanCollide = false
     else
-        -- Restaura o tamanho original (aproximado)
         hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
         hitbox.CanCollide = true
     end
@@ -202,7 +210,6 @@ local function startReachLoop()
             applyReach()
             task.wait(0.1)
         end
-        -- Quando desativado, restaura uma vez
         applyReach()
     end)
 end
@@ -213,7 +220,7 @@ local function stopReachLoop()
         task.cancel(reachLoop)
         reachLoop = nil
     end
-    applyReach() -- restaura tamanho
+    applyReach()
 end
 
 -- =============================================
@@ -238,7 +245,6 @@ local function updateESP()
             espSphere.Adornee = hitbox
             espSphere.Parent = hitbox
         end
-        -- Atualiza o tamanho da esfera de acordo com o tamanho da hitbox
         espSphere.Size = hitbox.Size
     else
         if espSphere then
@@ -256,7 +262,6 @@ local function startESPLoop()
             updateESP()
             task.wait(0.3)
         end
-        -- Limpa ao desativar
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
@@ -298,7 +303,7 @@ local function startStamina()
 end
 
 -- =============================================
--- SCORE GOAL (mantido igual, mas com correções)
+-- SCORE GOAL
 -- =============================================
 
 local selectedOption = nil
@@ -333,7 +338,7 @@ local function fireShoot(targetPos)
     if shootEvent then
         shootEvent:FireServer(unpack(args))
     else
-        warn("Evento de chute não encontrado. Verifique o caminho.")
+        warn("Evento de chute não encontrado.")
     end
 end
 
@@ -344,10 +349,10 @@ end
 local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
 local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
 
--- Auto Lock Ball
+-- Auto Lock Ball (toggle principal)
 sectionMain:Toggle({
     Title = "Auto Lock Ball",
-    Desc = "Olha automaticamente para a bola",
+    Desc = "Ativa o aimbot (modo escolhido abaixo)",
     Callback = function(state)
         _ENV.AutoLockBall = state
         if state then
@@ -359,10 +364,21 @@ sectionMain:Toggle({
     end
 })
 
+-- Dropdown para escolher o modo de aimbot
+sectionMain:Dropdown({
+    Title = "Aimbot Mode",
+    Desc = "Personagem (gira o corpo) ou Camera (mira a câmera)",
+    Options = {"Personagem", "Camera"},
+    Callback = function(option)
+        _ENV.AimbotMode = option
+        print("Modo de aimbot alterado para:", option)
+    end
+})
+
 -- Infinite Stamina
 sectionMain:Button({
     Title = "Infinite Stamina",
-    Desc = "Mantém a stamina em 100",
+    Desc = "Mantém stamina em 100",
     Callback = function()
         startStamina()
     end
@@ -409,9 +425,7 @@ sectionReach:Slider({
     Value = { Min = 1, Max = 40, Default = 20 },
     Callback = function(value)
         _ENV.MagnetRange = value
-        if _ENV.MagnetAtivo then
-            applyReach() -- atualiza imediatamente
-        end
+        if _ENV.MagnetAtivo then applyReach() end
     end
 })
 
@@ -445,11 +459,8 @@ sectionReach:Toggle({
 -- INICIALIZAÇÃO
 -- =============================================
 
--- Tenta encontrar HasBall ao carregar
 setupHasBall()
-
--- Inicializa a hitbox com tamanho padrão (caso já esteja ativo)
 task.wait(1)
 applyReach()
 
-print("Script recarregado com sucesso! Aproveite.")
+print("Script carregado! Aimbot disponível em dois modos.")
