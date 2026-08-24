@@ -17,7 +17,7 @@ _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
 _ENV.AutoLockBall = false
 _ENV.ShowESP = false
-_ENV.AimbotMode = "Personagem"  -- "Personagem" ou "Camera"
+_ENV.AimbotMode = "Personagem"  -- Padrão
 
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -113,10 +113,9 @@ local function aimbotCamera(ballPos)
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     if not rootPart then return end
 
-    -- Posição da câmera: atrás do jogador, apontando para a bola
-    local camOffset = Vector3.new(0, 5, 10) -- altura e distância
+    local camOffset = Vector3.new(0, 5, 10)
     local camPos = rootPart.Position + camOffset
-    local lookAt = Vector3.new(ballPos.X, ballPos.Y + 1, ballPos.Z) -- foca um pouco acima do centro da bola
+    local lookAt = Vector3.new(ballPos.X, ballPos.Y + 1, ballPos.Z)
     camera.CFrame = CFrame.new(camPos, lookAt)
 end
 
@@ -346,7 +345,8 @@ end
 -- INTERFACE (WindUI)
 -- =============================================
 
-local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
+-- TROQUEI O TÍTULO DA ABA PRINCIPAL PARA "Blue Lock Rivels"
+local mainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
 
 -- Auto Lock Ball (toggle principal)
@@ -364,7 +364,7 @@ sectionMain:Toggle({
     end
 })
 
--- Dropdown para escolher o modo de aimbot
+-- Dropdown para escolher o modo de aimbot (CORRIGIDO)
 sectionMain:Dropdown({
     Title = "Aimbot Mode",
     Desc = "Personagem (gira o corpo) ou Camera (mira a câmera)",
@@ -372,6 +372,12 @@ sectionMain:Dropdown({
     Callback = function(option)
         _ENV.AimbotMode = option
         print("Modo de aimbot alterado para:", option)
+        -- Mostra notificação visual
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Aimbot Mode",
+            Text = "Modo alterado para: " .. option,
+            Duration = 2
+        })
     end
 })
 
@@ -391,6 +397,7 @@ sectionMain:Dropdown({
     Options = {"Home", "Away"},
     Callback = function(option)
         selectedOption = option
+        print("Time selecionado:", option)
     end
 })
 
