@@ -1,5 +1,5 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB (Dropdown com Values)
+    Blue Lock - Sor_UmPlayer HUB (Versão estável com fallback)
 ]]
 
 local _ENV = getgenv()
@@ -15,27 +15,60 @@ _ENV.AutoLockBall = false
 _ENV.AimbotMode = "Personagem"
 _ENV.ShowESP = false
 
+-- =============================================
+-- CARREGAMENTO DO WINDUI COM FALLBACK
+-- =============================================
+
+local WindUI = nil
+local Window = nil
+local hubCarregado = false
+
+-- Tenta carregar o WindUI de várias fontes
+local function carregarWindUI()
+    local urls = {
+        "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+        "https://raw.githubusercontent.com/Footagesus/WindUI/main/main.lua",
+        "https://pastebin.com/raw/xxxxxxxx" -- coloque um link alternativo se necessário
+    }
+    for _, url in ipairs(urls) do
+        local sucesso, resultado = pcall(function()
+            return loadstring(game:HttpGet(url))()
+        end)
+        if sucesso and type(resultado) == "table" then
+            return resultado
+        end
+    end
+    return nil
+end
+
+pcall(function()
+    WindUI = carregarWindUI()
+    if WindUI then
+        Window = WindUI:CreateWindow({
+            Title = "🌟 Sor_UmPlayer HUB 🌟",
+            Icon = "rbxassetid://10723343321",
+            Author = "made by Sor_Gostoso",
+            Folder = "CloudHub",
+            Size = UDim2.fromOffset(460, 320),
+            Transparent = true,
+            Theme = "Dark",
+            Resizable = true,
+            SideBarWidth = 200,
+            HideSearchBar = true,
+            ScrollBarEnabled = false,
+        })
+        hubCarregado = true
+        print("WindUI carregado com sucesso!")
+    else
+        warn("Falha ao carregar WindUI. A interface não estará disponível.")
+    end
+end)
+
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Sor_UmPlayer Hub",
-    Text = "Script carregado!",
+    Text = hubCarregado and "Hub carregado!" or "Erro ao carregar UI, mas scripts básicos funcionam.",
     Duration = 5
-})
-
--- Carregar WindUI
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Window = WindUI:CreateWindow({
-    Title = "🌟 Sor_UmPlayer HUB 🌟",
-    Icon = "rbxassetid://10723343321",
-    Author = "made by Sor_Gostoso",
-    Folder = "CloudHub",
-    Size = UDim2.fromOffset(460, 320),
-    Transparent = true,
-    Theme = "Dark",
-    Resizable = true,
-    SideBarWidth = 200,
-    HideSearchBar = true,
-    ScrollBarEnabled = false,
 })
 
 -- =============================================
@@ -88,7 +121,7 @@ local function isBallOccupied()
 end
 
 -- =============================================
--- AIMBOT (dois modos)
+-- AIMBOT
 -- =============================================
 
 local aimbotConnection = nil
@@ -324,117 +357,124 @@ local function fireShoot(targetPos)
 end
 
 -- =============================================
--- INTERFACE (WindUI) - DROPDOWNS CORRIGIDOS
+-- INTERFACE (apenas se o hub carregou)
 -- =============================================
 
-local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
-local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
+if hubCarregado and Window then
+    local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
+    local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
 
--- Toggle Aimbot
-sectionMain:Toggle({
-    Title = "Aimbot",
-    Desc = "Ativa/Desativa o Aimbot",
-    Callback = function(state)
-        _ENV.AutoLockBall = state
-        if state then
-            if not hasBallValue then setupHasBall() end
-            startAimbot()
-        else
-            stopAimbot()
+    -- Toggle Aimbot
+    sectionMain:Toggle({
+        Title = "Aimbot",
+        Desc = "Ativa/Desativa o Aimbot",
+        Callback = function(state)
+            _ENV.AutoLockBall = state
+            if state then
+                if not hasBallValue then setupHasBall() end
+                startAimbot()
+            else
+                stopAimbot()
+            end
         end
-    end
-})
+    })
 
--- Dropdown Aimbot (agora com Values)
-sectionMain:Dropdown({
-    Title = "Selecione o Aimbot",
-    Values = {"Personagem", "Câmera"},  -- <--- formato corrigido
-    Callback = function(v)
-        _ENV.AimbotMode = v
-        print("Modo aimbot alterado para: " .. v)
-    end
-})
-
--- Infinite Stamina
-sectionMain:Button({
-    Title = "Infinite Stamina",
-    Desc = "Mantém a stamina em 100",
-    Callback = function()
-        startStamina()
-    end
-})
-
--- Dropdown Select Team (agora com Values)
-sectionMain:Dropdown({
-    Title = "Select your team",
-    Values = {"Home", "Away"},  -- <--- formato corrigido
-    Callback = function(v)
-        selectedOption = v
-    end
-})
-
--- Score Goal
-sectionMain:Button({
-    Title = "Score Goal",
-    Desc = "Faz um gol automático",
-    Callback = function()
-        if not selectedOption then
-            warn("Selecione um time primeiro!")
-            return
+    -- Dropdown Aimbot
+    sectionMain:Dropdown({
+        Title = "Selecione o Aimbot",
+        Values = {"Personagem", "Câmera"},
+        Callback = function(v)
+            _ENV.AimbotMode = v
+            print("Modo aimbot alterado para: " .. v)
         end
-        local targetPos = selectedOption == "Home" and Vector3.new(-234, 11, -47) or Vector3.new(311, 11, -50)
-        storeOriginalPosition()
-        teleportTo(targetPos)
-        task.wait(0.2)
-        fireShoot(targetPos)
-        task.wait(0.2)
-        if originalPosition then
-            teleportTo(originalPosition)
-        end
-    end
-})
+    })
 
--- Seção Reach
-local sectionReach = mainTab:Section({ Title = "Legit Reach", TextXAlignment = "Left" })
-
-sectionReach:Slider({
-    Title = "Reach Distance",
-    Desc = "Tamanho da hitbox da bola (Max 40)",
-    Step = 1,
-    Value = { Min = 1, Max = 40, Default = 20 },
-    Callback = function(value)
-        _ENV.MagnetRange = value
-        if _ENV.MagnetAtivo then
-            applyReach()
+    -- Infinite Stamina
+    sectionMain:Button({
+        Title = "Infinite Stamina",
+        Desc = "Mantém a stamina em 100",
+        Callback = function()
+            startStamina()
         end
-    end
-})
+    })
 
-sectionReach:Toggle({
-    Title = "Enable Reach",
-    Desc = "Aumenta a hitbox da bola",
-    Callback = function(state)
-        _ENV.MagnetAtivo = state
-        if state then
-            startReachLoop()
-        else
-            stopReachLoop()
+    -- Dropdown Select Team
+    sectionMain:Dropdown({
+        Title = "Select your team",
+        Values = {"Home", "Away"},
+        Callback = function(v)
+            selectedOption = v
         end
-    end
-})
+    })
 
-sectionReach:Toggle({
-    Title = "Show Reach ESP",
-    Desc = "Mostra a área da hitbox na bola",
-    Callback = function(state)
-        _ENV.ShowESP = state
-        if state then
-            startESPLoop()
-        else
-            stopESPLoop()
+    -- Score Goal
+    sectionMain:Button({
+        Title = "Score Goal",
+        Desc = "Faz um gol automático",
+        Callback = function()
+            if not selectedOption then
+                warn("Selecione um time primeiro!")
+                return
+            end
+            local targetPos = selectedOption == "Home" and Vector3.new(-234, 11, -47) or Vector3.new(311, 11, -50)
+            storeOriginalPosition()
+            teleportTo(targetPos)
+            task.wait(0.2)
+            fireShoot(targetPos)
+            task.wait(0.2)
+            if originalPosition then
+                teleportTo(originalPosition)
+            end
         end
-    end
-})
+    })
+
+    -- Seção Reach
+    local sectionReach = mainTab:Section({ Title = "Legit Reach", TextXAlignment = "Left" })
+
+    sectionReach:Slider({
+        Title = "Reach Distance",
+        Desc = "Tamanho da hitbox da bola (Max 40)",
+        Step = 1,
+        Value = { Min = 1, Max = 40, Default = 20 },
+        Callback = function(value)
+            _ENV.MagnetRange = value
+            if _ENV.MagnetAtivo then
+                applyReach()
+            end
+        end
+    })
+
+    sectionReach:Toggle({
+        Title = "Enable Reach",
+        Desc = "Aumenta a hitbox da bola",
+        Callback = function(state)
+            _ENV.MagnetAtivo = state
+            if state then
+                startReachLoop()
+            else
+                stopReachLoop()
+            end
+        end
+    })
+
+    sectionReach:Toggle({
+        Title = "Show Reach ESP",
+        Desc = "Mostra a área da hitbox na bola",
+        Callback = function(state)
+            _ENV.ShowESP = state
+            if state then
+                startESPLoop()
+            else
+                stopESPLoop()
+            end
+        end
+    })
+
+    print("Interface criada com sucesso!")
+else
+    print("Hub sem interface, mas funções básicas podem ser usadas via console.")
+    -- Você pode adicionar comandos manuais aqui se quiser
+end
 
 -- =============================================
 -- INICIALIZAÇÃO
@@ -444,4 +484,4 @@ setupHasBall()
 task.wait(1)
 applyReach()
 
-print("Script carregado! Dropdowns com Values funcionando.")
+print("Script carregado! (Hub: " .. (hubCarregado and "OK" or "FALHOU") .. ")")
