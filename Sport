@@ -1,7 +1,7 @@
 --[[ 
     Blue Lock - Sor_UmPlayer HUB
     - Aimbot Personagem (gira o corpo)
-    - Aimbot Câmera (mira a câmera)
+    - Aimbot Câmera (mira a câmera) [padrão]
     - Reach: aumenta hitbox da bola
     - ESP na hitbox da bola
 ]]
@@ -17,12 +17,12 @@ _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
 _ENV.AutoLockBall = false
 _ENV.ShowESP = false
-_ENV.AimbotMode = "Personagem"  -- Padrão
+_ENV.AimbotMode = "Camera"  -- Padrão: Camera
 
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Sor_UmPlayer Hub",
-    Text = "Script carregado com 2 modos de aimbot!",
+    Text = "Script carregado! Aimbot padrão: Câmera.",
     Duration = 5
 })
 
@@ -345,7 +345,6 @@ end
 -- INTERFACE (WindUI)
 -- =============================================
 
--- TROQUEI O TÍTULO DA ABA PRINCIPAL PARA "Blue Lock Rivels"
 local mainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
 
@@ -364,21 +363,26 @@ sectionMain:Toggle({
     end
 })
 
--- Dropdown para escolher o modo de aimbot (CORRIGIDO)
+-- DROPDOWN CORRIGIDO com as duas opções e "Camera (padrão)" como padrão
 sectionMain:Dropdown({
     Title = "Aimbot Mode",
-    Desc = "Personagem (gira o corpo) ou Camera (mira a câmera)",
-    Options = {"Personagem", "Camera"},
+    Desc = "Escolha o tipo de mira",
+    Options = {"Camera (padrão)", "Personagem"},  -- <-- OPÇÕES EXATAS
     Callback = function(option)
-        _ENV.AimbotMode = option
-        print("Modo de aimbot alterado para:", option)
-        -- Mostra notificação visual
+        -- Mapeia o texto para o valor interno
+        if option == "Camera (padrão)" then
+            _ENV.AimbotMode = "Camera"
+        elseif option == "Personagem" then
+            _ENV.AimbotMode = "Personagem"
+        end
+        print("Modo de aimbot alterado para:", _ENV.AimbotMode)
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Aimbot Mode",
-            Text = "Modo alterado para: " .. option,
+            Text = "Modo: " .. option,
             Duration = 2
         })
-    end
+    end,
+    Default = "Camera (padrão)"  -- Define o item selecionado inicialmente
 })
 
 -- Infinite Stamina
@@ -470,4 +474,4 @@ setupHasBall()
 task.wait(1)
 applyReach()
 
-print("Script carregado! Aimbot disponível em dois modos.")
+print("Script carregado! Aimbot padrão: Câmera.")
