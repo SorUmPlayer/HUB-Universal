@@ -1,7 +1,5 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB (Versão estável)
-    - Aimbot com dois modos: Personagem e Câmera
-    - Dropdown funcionando corretamente
+    Blue Lock - Sor_UmPlayer HUB (Dropdown com Values)
 ]]
 
 local _ENV = getgenv()
@@ -14,7 +12,7 @@ local replicatedStorage = game:GetService("ReplicatedStorage")
 _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
 _ENV.AutoLockBall = false
-_ENV.AimbotMode = "Personagem"   -- Valor padrão
+_ENV.AimbotMode = "Personagem"
 _ENV.ShowESP = false
 
 -- Notificação
@@ -106,25 +104,19 @@ local function applyAimbot()
     local ball = getBallPart()
     if not ball then return end
 
-    -- Se o jogador está com a bola, não mira
     if hasBallValue and hasBallValue.Value == true then
         return
     end
 
-    -- Direção para a bola (mantém a altura do chão para o personagem)
     local targetPos = Vector3.new(ball.Position.X, rootPart.Position.Y, ball.Position.Z)
     local direction = (targetPos - rootPart.Position).Unit
     if direction.Magnitude < 0.1 then return end
 
     if _ENV.AimbotMode == "Personagem" then
-        -- Rotaciona o personagem
         rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
     elseif _ENV.AimbotMode == "Câmera" then
-        -- Rotaciona a câmera para olhar para a bola (mantém distância e altura atuais)
         local currentPos = camera.CFrame.Position
-        local lookAt = ball.Position
-        -- Mantém a mesma altura da câmera para não oscilar
-        lookAt = Vector3.new(lookAt.X, currentPos.Y, lookAt.Z)
+        local lookAt = Vector3.new(ball.Position.X, currentPos.Y, ball.Position.Z)
         camera.CFrame = CFrame.new(currentPos, lookAt)
     end
 end
@@ -168,12 +160,12 @@ local function setupHasBall()
             end
         end)
     else
-        warn("HasBall não encontrado. O aimbot pode não funcionar corretamente.")
+        warn("HasBall não encontrado.")
     end
 end
 
 -- =============================================
--- REACH (aumentar a hitbox da bola)
+-- REACH
 -- =============================================
 
 local reachLoop = nil
@@ -213,7 +205,7 @@ local function stopReachLoop()
 end
 
 -- =============================================
--- ESP (esfera ao redor da hitbox da bola)
+-- ESP
 -- =============================================
 
 local espSphere = nil
@@ -332,7 +324,7 @@ local function fireShoot(targetPos)
 end
 
 -- =============================================
--- INTERFACE (WindUI) - CORRIGIDA
+-- INTERFACE (WindUI) - DROPDOWNS CORRIGIDOS
 -- =============================================
 
 local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
@@ -353,15 +345,13 @@ sectionMain:Toggle({
     end
 })
 
--- Dropdown para selecionar o modo (CORRIGIDO)
+-- Dropdown Aimbot (agora com Values)
 sectionMain:Dropdown({
     Title = "Selecione o Aimbot",
-    Desc = "Escolha entre Personagem ou Câmera",
-    Options = {"Personagem", "Câmera"},
-    Default = "Personagem",  -- <-- ESSENCIAL para aparecer
-    Callback = function(option)
-        _ENV.AimbotMode = option
-        print("Modo aimbot alterado para: " .. option)
+    Values = {"Personagem", "Câmera"},  -- <--- formato corrigido
+    Callback = function(v)
+        _ENV.AimbotMode = v
+        print("Modo aimbot alterado para: " .. v)
     end
 })
 
@@ -374,14 +364,12 @@ sectionMain:Button({
     end
 })
 
--- Select Team
+-- Dropdown Select Team (agora com Values)
 sectionMain:Dropdown({
     Title = "Select your team",
-    Desc = "Escolha Home ou Away",
-    Options = {"Home", "Away"},
-    Default = "Home",
-    Callback = function(option)
-        selectedOption = option
+    Values = {"Home", "Away"},  -- <--- formato corrigido
+    Callback = function(v)
+        selectedOption = v
     end
 })
 
@@ -456,4 +444,4 @@ setupHasBall()
 task.wait(1)
 applyReach()
 
-print("Script carregado! Aimbot com dois modos disponíveis.")
+print("Script carregado! Dropdowns com Values funcionando.")
