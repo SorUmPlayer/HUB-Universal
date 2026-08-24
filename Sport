@@ -1,7 +1,7 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB (Com 2 modos de Aimbot)
-    - Personagem: rotaciona o corpo
-    - Câmera: rotaciona a câmera
+    Blue Lock - Sor_UmPlayer HUB (Versão estável)
+    - Aimbot com dois modos: Personagem e Câmera
+    - Dropdown funcionando corretamente
 ]]
 
 local _ENV = getgenv()
@@ -13,8 +13,8 @@ local replicatedStorage = game:GetService("ReplicatedStorage")
 -- Variáveis globais
 _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
-_ENV.AutoLockBall = false          -- Toggle principal
-_ENV.AimbotMode = "Personagem"     -- Modo selecionado
+_ENV.AutoLockBall = false
+_ENV.AimbotMode = "Personagem"   -- Valor padrão
 _ENV.ShowESP = false
 
 -- Notificação
@@ -332,7 +332,7 @@ local function fireShoot(targetPos)
 end
 
 -- =============================================
--- INTERFACE (WindUI)
+-- INTERFACE (WindUI) - CORRIGIDA
 -- =============================================
 
 local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
@@ -353,11 +353,12 @@ sectionMain:Toggle({
     end
 })
 
--- Dropdown para selecionar o modo
+-- Dropdown para selecionar o modo (CORRIGIDO)
 sectionMain:Dropdown({
     Title = "Selecione o Aimbot",
     Desc = "Escolha entre Personagem ou Câmera",
     Options = {"Personagem", "Câmera"},
+    Default = "Personagem",  -- <-- ESSENCIAL para aparecer
     Callback = function(option)
         _ENV.AimbotMode = option
         print("Modo aimbot alterado para: " .. option)
@@ -378,6 +379,7 @@ sectionMain:Dropdown({
     Title = "Select your team",
     Desc = "Escolha Home ou Away",
     Options = {"Home", "Away"},
+    Default = "Home",
     Callback = function(option)
         selectedOption = option
     end
