@@ -1,9 +1,7 @@
 --[[ 
-    Blue Lock - Sor_UmPlayer HUB
-    - Aimbot Personagem (gira o corpo)
-    - Aimbot Câmera (mira a câmera) [padrão]
-    - Reach: aumenta hitbox da bola
-    - ESP na hitbox da bola
+    Blue Lock - Sor_UmPlayer HUB (Com 2 modos de Aimbot)
+    - Personagem: rotaciona o corpo
+    - Câmera: rotaciona a câmera
 ]]
 
 local _ENV = getgenv()
@@ -15,14 +13,14 @@ local replicatedStorage = game:GetService("ReplicatedStorage")
 -- Variáveis globais
 _ENV.MagnetRange = 20
 _ENV.MagnetAtivo = false
-_ENV.AutoLockBall = false
+_ENV.AutoLockBall = false          -- Toggle principal
+_ENV.AimbotMode = "Personagem"     -- Modo selecionado
 _ENV.ShowESP = false
-_ENV.AimbotMode = "Camera"  -- Padrão: Camera
 
 -- Notificação
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "Sor_UmPlayer Hub",
-    Text = "Script carregado! Aimbot padrão: Câmera.",
+    Text = "Script carregado!",
     Duration = 5
 })
 
@@ -98,49 +96,42 @@ end
 local aimbotConnection = nil
 local hasBallValue = nil
 
--- Aimbot Personagem
-local function aimbotPersonagem(ballPos, rootPart)
-    local targetPos = Vector3.new(ballPos.X, rootPart.Position.Y, ballPos.Z)
-    local direction = (targetPos - rootPart.Position).Unit
-    if direction.Magnitude < 0.1 then return end
-    rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
-end
-
--- Aimbot Câmera
-local function aimbotCamera(ballPos)
+local function applyAimbot()
     local character = player.Character
     if not character then return end
     local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-
-    local camOffset = Vector3.new(0, 5, 10)
-    local camPos = rootPart.Position + camOffset
-    local lookAt = Vector3.new(ballPos.X, ballPos.Y + 1, ballPos.Z)
-    camera.CFrame = CFrame.new(camPos, lookAt)
-end
-
-local function updateAimbot()
-    if not _ENV.AutoLockBall then return end
-    if hasBallValue and hasBallValue.Value == true then return end
-
-    local character = player.Character
-    if not character then return end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not rootPart or not humanoid then return end
 
     local ball = getBallPart()
     if not ball then return end
 
+    -- Se o jogador está com a bola, não mira
+    if hasBallValue and hasBallValue.Value == true then
+        return
+    end
+
+    -- Direção para a bola (mantém a altura do chão para o personagem)
+    local targetPos = Vector3.new(ball.Position.X, rootPart.Position.Y, ball.Position.Z)
+    local direction = (targetPos - rootPart.Position).Unit
+    if direction.Magnitude < 0.1 then return end
+
     if _ENV.AimbotMode == "Personagem" then
-        aimbotPersonagem(ball.Position, rootPart)
-    elseif _ENV.AimbotMode == "Camera" then
-        aimbotCamera(ball.Position)
+        -- Rotaciona o personagem
+        rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
+    elseif _ENV.AimbotMode == "Câmera" then
+        -- Rotaciona a câmera para olhar para a bola (mantém distância e altura atuais)
+        local currentPos = camera.CFrame.Position
+        local lookAt = ball.Position
+        -- Mantém a mesma altura da câmera para não oscilar
+        lookAt = Vector3.new(lookAt.X, currentPos.Y, lookAt.Z)
+        camera.CFrame = CFrame.new(currentPos, lookAt)
     end
 end
 
 local function startAimbot()
     if aimbotConnection then return end
-    aimbotConnection = runService.RenderStepped:Connect(updateAimbot)
+    aimbotConnection = runService.RenderStepped:Connect(applyAimbot)
 end
 
 local function stopAimbot()
@@ -150,7 +141,6 @@ local function stopAimbot()
     end
 end
 
--- Detecta HasBall para pausar o aimbot
 local function setupHasBall()
     local model = workspace:FindFirstChild(player.Name)
     if model then
@@ -345,13 +335,13 @@ end
 -- INTERFACE (WindUI)
 -- =============================================
 
-local mainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
+local mainTab = Window:Tab({ Title = "MAIN", Icon = "home" })
 local sectionMain = mainTab:Section({ Title = "Main Options", TextXAlignment = "Left" })
 
--- Auto Lock Ball (toggle principal)
+-- Toggle Aimbot
 sectionMain:Toggle({
-    Title = "Auto Lock Ball",
-    Desc = "Ativa o aimbot (modo escolhido abaixo)",
+    Title = "Aimbot",
+    Desc = "Ativa/Desativa o Aimbot",
     Callback = function(state)
         _ENV.AutoLockBall = state
         if state then
@@ -363,32 +353,21 @@ sectionMain:Toggle({
     end
 })
 
--- DROPDOWN CORRIGIDO com as duas opções e "Camera (padrão)" como padrão
+-- Dropdown para selecionar o modo
 sectionMain:Dropdown({
-    Title = "Aimbot Mode",
-    Desc = "Escolha o tipo de mira",
-    Options = {"Camera (padrão)", "Personagem"},  -- <-- OPÇÕES EXATAS
+    Title = "Selecione o Aimbot",
+    Desc = "Escolha entre Personagem ou Câmera",
+    Options = {"Personagem", "Câmera"},
     Callback = function(option)
-        -- Mapeia o texto para o valor interno
-        if option == "Camera (padrão)" then
-            _ENV.AimbotMode = "Camera"
-        elseif option == "Personagem" then
-            _ENV.AimbotMode = "Personagem"
-        end
-        print("Modo de aimbot alterado para:", _ENV.AimbotMode)
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Aimbot Mode",
-            Text = "Modo: " .. option,
-            Duration = 2
-        })
-    end,
-    Default = "Camera (padrão)"  -- Define o item selecionado inicialmente
+        _ENV.AimbotMode = option
+        print("Modo aimbot alterado para: " .. option)
+    end
 })
 
 -- Infinite Stamina
 sectionMain:Button({
     Title = "Infinite Stamina",
-    Desc = "Mantém stamina em 100",
+    Desc = "Mantém a stamina em 100",
     Callback = function()
         startStamina()
     end
@@ -401,7 +380,6 @@ sectionMain:Dropdown({
     Options = {"Home", "Away"},
     Callback = function(option)
         selectedOption = option
-        print("Time selecionado:", option)
     end
 })
 
@@ -436,7 +414,9 @@ sectionReach:Slider({
     Value = { Min = 1, Max = 40, Default = 20 },
     Callback = function(value)
         _ENV.MagnetRange = value
-        if _ENV.MagnetAtivo then applyReach() end
+        if _ENV.MagnetAtivo then
+            applyReach()
+        end
     end
 })
 
@@ -474,4 +454,4 @@ setupHasBall()
 task.wait(1)
 applyReach()
 
-print("Script carregado! Aimbot padrão: Câmera.")
+print("Script carregado! Aimbot com dois modos disponíveis.")
