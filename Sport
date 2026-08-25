@@ -1,24 +1,21 @@
 --[[
-    Blue Lock Rivels Hub – Refeito do zero
+    Blue Lock Rivels Hub – Otimizado
     Aimbot Personagem + Câmera | Reach com ESP na bola
-    Desativa aimbot quando pega a bola
+    Desativa aimbot E reach quando pega a bola
 ]]
 
 local _ENV = getgenv()
 local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
-local userInput = game:GetService("UserInputService")
 
 -- =====================================================
 --  DETECÇÃO DA BOLA (adaptável)
 -- =====================================================
 local function getBall()
-    -- Primeiro, tenta o caminho direto
     local football = workspace:FindFirstChild("Football")
     if football then return football end
 
-    -- Fallback: procura por qualquer parte com nome contendo "ball"
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
             return obj
@@ -30,14 +27,11 @@ end
 local function getHitbox()
     local ball = getBall()
     if ball then
-        -- Se já for a hitbox (ex: Football.Hitbox)
         if ball.Name == "Hitbox" then return ball end
-        -- Procura filho chamado Hitbox
         local hitbox = ball:FindFirstChild("Hitbox")
         if hitbox and hitbox:IsA("BasePart") then
             return hitbox
         end
-        -- Se não achar, usa a própria bola como hitbox
         return ball
     end
     return nil
@@ -52,18 +46,20 @@ local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
 
-local gyro = nil          -- para o aimbot personagem
-local cameraLerp = 0.2    -- suavidade da câmera
+local gyro = nil
+local cameraLerp = 0.2
 local ultimoChute = 0
 local selectedTeam = nil
-local hasBall = nil
-local connection = nil
+
+local espSphere = nil
+local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4) -- tamanho original
+local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  VERIFICA SE JOGADOR PEGOU A BOLA
+--  VERIFICA SE JOGADOR PEGOU A BOLA (OTIMIZADO)
 -- =====================================================
 local function jogadorTemBola()
-    -- Tenta encontrar pelo HasBall
+    -- Verifica pelo HasBall (mais confiável)
     local model = game.Workspace:FindFirstChild(player.Name)
     if model then
         local values = model:FindFirstChild("Values")
@@ -75,7 +71,7 @@ local function jogadorTemBola()
         end
     end
     
-    -- Fallback: verifica se a bola está perto e colidindo
+    -- Fallback: verifica distância (só se não achou o HasBall)
     local hitbox = getHitbox()
     if not hitbox then return false end
     
@@ -85,18 +81,27 @@ local function jogadorTemBola()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
     
-    -- Verifica se a hitbox está dentro do jogador
     local dist = (hrp.Position - hitbox.Position).Magnitude
     return dist < 3
 end
 
 -- =====================================================
---  AIMBOT PERSONAGEM (usa BodyGyro)
+--  RESTAURA HITBOX PARA O TAMANHO ORIGINAL
+-- =====================================================
+local function restaurarHitbox()
+    local hitbox = getHitbox()
+    if hitbox then
+        hitbox.Size = hitboxOriginalSize
+        hitbox.Transparency = hitboxOriginalTransparency
+    end
+end
+
+-- =====================================================
+--  AIMBOT PERSONAGEM
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
     if estado then
-        -- Cria um BodyGyro no HumanoidRootPart
         local char = player.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -117,8 +122,10 @@ local function ativarAimbotPersonagem(estado)
 end
 
 local function atualizarAimbotPersonagem()
-    -- Desativa se jogador tiver a bola
-    if jogadorTemBola() then
+    local temBola = jogadorTemBola()
+    
+    -- Se tiver bola, desativa o gyro
+    if temBola then
         if gyro then
             gyro:Destroy()
             gyro = nil
@@ -126,22 +133,31 @@ local function atualizarAimbotPersonagem()
         return
     end
     
+    -- Se não tiver bola e aimbot estiver ativo
     if not aimbotPersonagem then return end
+    
     local char = player.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
+    
     local hitbox = getHitbox()
     if not hitbox then return end
 
-    -- Direção para a hitbox (mantendo altura Y do personagem)
+    -- Se o gyro foi destruído, recria
+    if not gyro then
+        gyro = Instance.new("BodyGyro")
+        gyro.Parent = hrp
+        gyro.D = 500
+        gyro.P = 5000
+        gyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+    end
+
     local posBola = hitbox.Position
     local posJogador = hrp.Position
     local direcao = (Vector3.new(posBola.X, posJogador.Y, posBola.Z) - posJogador).Unit
 
-    if gyro then
-        gyro.CFrame = CFrame.lookAt(posJogador, posJogador + direcao)
-    end
+    gyro.CFrame = CFrame.lookAt(posJogador, posJogador + direcao)
 end
 
 -- =====================================================
@@ -154,75 +170,79 @@ local function atualizarAimbotCamera()
     end
     
     if not aimbotCamera then return end
+    
     local hitbox = getHitbox()
     if not hitbox then return end
 
     local posBola = hitbox.Position
     local posCamera = camera.CFrame.Position
-    -- Interpolação suave
     local novaPos = posCamera:Lerp(posBola, cameraLerp)
     camera.CFrame = CFrame.new(novaPos, posBola)
 end
 
 -- =====================================================
---  REACH (aumenta a hitbox da bola)
+--  REACH (OTIMIZADO - DESATIVA QUANDO TEM BOLA)
 -- =====================================================
 local function aplicarReach()
+    local temBola = jogadorTemBola()
     local hitbox = getHitbox()
     if not hitbox then return end
 
-    if reachAtivo then
-        -- Aumenta o tamanho da hitbox para o alcance definido
-        hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
-        hitbox.Transparency = 0.5 -- opcional, para ver
-    else
-        -- Restaura tamanho original (chutei 1.4, ajuste se necessário)
-        hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
-        hitbox.Transparency = 0
+    -- Se tiver bola OU reach desativado, restaura hitbox
+    if temBola or not reachAtivo then
+        if hitbox.Size ~= hitboxOriginalSize then
+            restaurarHitbox()
+        end
+        return
     end
+
+    -- Aplica o reach (só se não tiver bola)
+    hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+    hitbox.Transparency = 0.5
 end
 
 -- =====================================================
 --  ESP DA ÁREA (na bola)
 -- =====================================================
-local espSphere = nil
-
 local function atualizarESP()
+    local temBola = jogadorTemBola()
     local hitbox = getHitbox()
-    if not hitbox then
-        if espSphere then espSphere:Destroy() espSphere = nil end
-        return
-    end
-
-    if mostrarESP then
-        if not espSphere or espSphere.Parent ~= hitbox then
-            espSphere = Instance.new("SelectionSphere")
-            espSphere.Name = "ReachESP"
-            espSphere.Adornee = hitbox
-            espSphere.Parent = hitbox
-            espSphere.Color3 = Color3.fromRGB(0, 255, 100)
-            espSphere.Transparency = 0.7
-        end
-        -- Ajusta o tamanho da esfera para o alcance atual
-        local scale = reachDistancia / 2  -- SelectionSphere usa Scale, ajuste empírico
-        espSphere.Scale = Vector3.new(scale, scale, scale)
-    else
+    
+    -- Se não tiver hitbox ou tiver bola, remove o ESP
+    if not hitbox or temBola or not mostrarESP then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
         end
+        return
     end
+
+    -- Cria/atualiza o ESP
+    if not espSphere or espSphere.Parent ~= hitbox then
+        espSphere = Instance.new("SelectionSphere")
+        espSphere.Name = "ReachESP"
+        espSphere.Adornee = hitbox
+        espSphere.Parent = hitbox
+        espSphere.Color3 = Color3.fromRGB(0, 255, 100)
+        espSphere.Transparency = 0.7
+    end
+    
+    local scale = reachDistancia / 2
+    espSphere.Scale = Vector3.new(scale, scale, scale)
 end
 
 -- =====================================================
---  LOOP PRINCIPAL (executa a cada frame)
+--  LOOP PRINCIPAL (OTIMIZADO)
 -- =====================================================
-runService.RenderStepped:Connect(function()
+local function loopPrincipal()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
     atualizarESP()
-end)
+end
+
+-- Conecta o loop
+runService.RenderStepped:Connect(loopPrincipal)
 
 -- =====================================================
 --  UI – WindUI
@@ -250,7 +270,7 @@ local Window = WindUI:CreateWindow({
     ScrollBarEnabled = false,
 })
 
--- Tab Principal (renomeada para Blue Lock Rivels)
+-- Tab Principal
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 
 -- Seção Aimbot
@@ -261,6 +281,10 @@ secAimbot:Toggle({
     Desc = "Seu corpo vira para a bola (desativa ao pegar)",
     Callback = function(v)
         ativarAimbotPersonagem(v)
+        if not v and gyro then
+            gyro:Destroy()
+            gyro = nil
+        end
     end
 })
 
@@ -282,21 +306,20 @@ secReach:Slider({
     Value = { Min = 1, Max = 40, Default = 20 },
     Callback = function(v)
         reachDistancia = v
+        -- Atualiza o ESP se estiver ativo
+        if mostrarESP then
+            atualizarESP()
+        end
     end
 })
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox da bola",
+    Desc = "Aumenta a hitbox da bola (desativa ao pegar)",
     Callback = function(v)
         reachAtivo = v
         if not v then
-            -- Restaura hitbox imediatamente
-            local hitbox = getHitbox()
-            if hitbox then
-                hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
-                hitbox.Transparency = 0
-            end
+            restaurarHitbox()
         end
     end
 })
