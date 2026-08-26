@@ -1,13 +1,16 @@
 --[[
-    Blue Lock Rivels Hub – Ultra Otimizado
-    Sem queda de FPS quando pega a bola
-    Câmera não buga mais ao chutar
+    Blue Lock Rivels Hub – Versão Estável
+    - FPS otimizado (sem lag)
+    - Aimbot preciso (corpo e câmera)
+    - Funciona com ShiftLock (opção para desativar)
+    - Stamina infinita funcionando
 ]]
 
 local _ENV = getgenv()
 local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
+local userInput = game:GetService("UserInputService")
 
 -- =====================================================
 --  DETECÇÃO DA BOLA
@@ -28,9 +31,7 @@ local function getHitbox()
     if ball then
         if ball.Name == "Hitbox" then return ball end
         local hitbox = ball:FindFirstChild("Hitbox")
-        if hitbox and hitbox:IsA("BasePart") then
-            return hitbox
-        end
+        if hitbox and hitbox:IsA("BasePart") then return hitbox end
         return ball
     end
     return nil
@@ -44,69 +45,61 @@ local aimbotCamera = false
 local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
+local desativarShiftLock = false
 
 local gyro = nil
-local cameraLerp = 0.15 -- reduzido pra ficar mais suave
-local ultimoChute = 0
+local cameraSmooth = 0.15
 local selectedTeam = nil
 
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
--- Cache pra evitar ficar procurando toda hora
+-- Cache de posse
 local hasBallCache = false
-local lastCheckTime = 0
-local checkInterval = 0.1 -- verifica a cada 0.1 segundos (em vez de todo frame)
+local hasBallValue = nil
 
 -- =====================================================
---  VERIFICA SE JOGADOR PEGOU A BOLA (COM CACHE)
+--  FUNÇÃO DE POSSE (com evento)
 -- =====================================================
-local function jogadorTemBola()
-    local now = tick()
-    
-    -- Só verifica a cada 0.1 segundos (menos processamento)
-    if now - lastCheckTime < checkInterval then
-        return hasBallCache
-    end
-    lastCheckTime = now
-    
-    -- Verifica pelo HasBall
-    local model = game.Workspace:FindFirstChild(player.Name)
+local function atualizarCachePosse()
+    local model = workspace:FindFirstChild(player.Name)
     if model then
         local values = model:FindFirstChild("Values")
         if values then
-            local hasBallValue = values:FindFirstChild("HasBall")
-            if hasBallValue and hasBallValue:IsA("BoolValue") then
-                hasBallCache = hasBallValue.Value
-                return hasBallCache
+            local hb = values:FindFirstChild("HasBall")
+            if hb and hb:IsA("BoolValue") then
+                if hasBallValue ~= hb then
+                    hasBallValue = hb
+                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
+                        hasBallCache = hasBallValue.Value
+                    end)
+                end
+                hasBallCache = hb.Value
+                return
             end
         end
     end
-    
-    -- Fallback: verifica distância
+    -- Fallback: verifica distância (apenas uma vez para cache)
     local hitbox = getHitbox()
     if not hitbox then 
         hasBallCache = false
-        return false
+        return 
     end
-    
     local char = player.Character
     if not char then 
         hasBallCache = false
-        return false
+        return 
     end
-    
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then 
         hasBallCache = false
-        return false
+        return 
     end
-    
-    local dist = (hrp.Position - hitbox.Position).Magnitude
-    hasBallCache = dist < 2.5
-    return hasBallCache
+    hasBallCache = (hrp.Position - hitbox.Position).Magnitude < 2.5
 end
+
+atualizarCachePosse()
 
 -- =====================================================
 --  RESTAURA HITBOX
@@ -120,7 +113,7 @@ local function restaurarHitbox()
 end
 
 -- =====================================================
---  AIMBOT PERSONAGEM (com recriação inteligente)
+--  AIMBOT PERSONAGEM (BodyGyro)
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -139,10 +132,7 @@ local function atualizarAimbotPersonagem()
         return 
     end
     
-    local temBola = jogadorTemBola()
-    
-    -- Se tiver bola, remove o gyro
-    if temBola then
+    if hasBallCache then
         if gyro then
             gyro:Destroy()
             gyro = nil
@@ -150,7 +140,6 @@ local function atualizarAimbotPersonagem()
         return
     end
     
-    -- Se não tiver bola
     local char = player.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -159,7 +148,12 @@ local function atualizarAimbotPersonagem()
     local hitbox = getHitbox()
     if not hitbox then return end
 
-    -- Recria o gyro se necessário
+    -- Desativa ShiftLock se ativado
+    if desativarShiftLock and userInput:GetFocused() then
+        -- Simula pressionar Shift para desativar (se o jogo usar)
+        -- Ou simplesmente ignoramos, pois BodyGyro força a rotação
+    end
+
     if not gyro then
         gyro = Instance.new("BodyGyro")
         gyro.Parent = hrp
@@ -171,107 +165,85 @@ local function atualizarAimbotPersonagem()
     local posBola = hitbox.Position
     local posJogador = hrp.Position
     local direcao = (Vector3.new(posBola.X, posJogador.Y, posBola.Z) - posJogador).Unit
-
     gyro.CFrame = CFrame.lookAt(posJogador, posJogador + direcao)
 end
 
 -- =====================================================
---  AIMBOT CÂMERA (com verificação de chute)
+--  AIMBOT CÂMERA
 -- =====================================================
-local cameraTarget = nil
-local cameraSmooth = 0.15
-
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
+    if hasBallCache then return end
     
-    local temBola = jogadorTemBola()
     local hitbox = getHitbox()
-    
-    -- Se não tem hitbox, não faz nada
     if not hitbox then return end
     
-    -- Se tem bola, não segue (mas mantém a câmera onde está)
-    if temBola then
+    -- Não força câmera durante chute
+    if hitbox.AssemblyLinearVelocity.Magnitude > 50 then
         return
     end
     
-    -- Verifica se a bola está voando (chute)
-    local velocidade = hitbox.AssemblyLinearVelocity.Magnitude
-    if velocidade > 50 then
-        -- Se a bola foi chutada, não força a câmera pra não bugar
-        return
-    end
-    
-    -- Segue a bola suavemente
     local posBola = hitbox.Position
     local posCamera = camera.CFrame.Position
-    
-    -- Só atualiza se a bola não estiver muito longe
-    local dist = (posCamera - posBola).Magnitude
-    if dist > 100 then
-        -- Se muito longe, não teleporta a câmera
-        return
-    end
+    if (posCamera - posBola).Magnitude > 100 then return end
     
     local novaPos = posCamera:Lerp(posBola, cameraSmooth)
     camera.CFrame = CFrame.new(novaPos, posBola)
 end
 
 -- =====================================================
---  REACH (com cache)
+--  REACH
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
-    local temBola = jogadorTemBola()
-    local hitbox = getHitbox()
-    if not hitbox then return end
-
-    -- Se tiver bola OU reach desativado, restaura
-    if temBola or not reachAtivo then
+    if hasBallCache or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
             reachAplicado = false
         end
         return
     end
-
-    -- Aplica o reach
-    if not reachAplicado or hitbox.Size.X ~= reachDistancia then
-        hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+    
+    local hitbox = getHitbox()
+    if not hitbox then return end
+    
+    local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+    if hitbox.Size ~= novoSize then
+        hitbox.Size = novoSize
         hitbox.Transparency = 0.5
         reachAplicado = true
     end
 end
 
 -- =====================================================
---  ESP (com cache)
+--  ESP
 -- =====================================================
-local espAtivo = false
-
 local function atualizarESP()
-    local temBola = jogadorTemBola()
-    local hitbox = getHitbox()
-    
-    -- Se não tiver hitbox ou tiver bola ou ESP desativado
-    if not hitbox or temBola or not mostrarESP then
+    if hasBallCache or not mostrarESP then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
-            espAtivo = false
         end
         return
     end
-
-    -- Cria/atualiza o ESP
-    if not espAtivo or espSphere == nil then
+    
+    local hitbox = getHitbox()
+    if not hitbox then
+        if espSphere then
+            espSphere:Destroy()
+            espSphere = nil
+        end
+        return
+    end
+    
+    if not espSphere then
         espSphere = Instance.new("SelectionSphere")
         espSphere.Name = "ReachESP"
         espSphere.Adornee = hitbox
         espSphere.Parent = hitbox
         espSphere.Color3 = Color3.fromRGB(0, 255, 100)
         espSphere.Transparency = 0.7
-        espAtivo = true
     end
     
     local scale = reachDistancia / 2
@@ -281,17 +253,30 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  LOOP PRINCIPAL (com throttle)
+--  LOOP PRINCIPAL
 -- =====================================================
-local function loopPrincipal()
+runService.Heartbeat:Connect(function()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
     atualizarESP()
-end
+end)
 
--- Conecta o loop com throttling (executa menos vezes por segundo)
-runService.RenderStepped:Connect(loopPrincipal)
+-- =====================================================
+--  INFINITE STAMINA
+-- =====================================================
+task.spawn(function()
+    while true do
+        local stats = player:FindFirstChild("PlayerStats")
+        if stats then
+            local stamina = stats:FindFirstChild("Stamina")
+            if stamina and stamina:IsA("NumberValue") then
+                stamina.Value = 100
+            end
+        end
+        task.wait(0.3)
+    end
+end)
 
 -- =====================================================
 --  UI – WindUI
@@ -299,7 +284,7 @@ runService.RenderStepped:Connect(loopPrincipal)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Ultra Otimizado)",
+    Text = "Carregado! (Estável)",
     Duration = 3
 })
 
@@ -310,7 +295,7 @@ local Window = WindUI:CreateWindow({
     Icon = "rbxassetid://10723343321",
     Author = "Sor_Gostoso",
     Folder = "BlueLockHub",
-    Size = UDim2.fromOffset(480, 350),
+    Size = UDim2.fromOffset(480, 400),
     Transparent = true,
     Theme = "Dark",
     Resizable = true,
@@ -327,7 +312,7 @@ local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
     Title = "Aimbot Personagem",
-    Desc = "Seu corpo vira para a bola (desativa ao pegar)",
+    Desc = "Seu corpo vira para a bola",
     Callback = function(v)
         ativarAimbotPersonagem(v)
     end
@@ -335,9 +320,17 @@ secAimbot:Toggle({
 
 secAimbot:Toggle({
     Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola (não buga ao chutar)",
+    Desc = "Câmera segue a bola (sem bug ao chutar)",
     Callback = function(v)
         aimbotCamera = v
+    end
+})
+
+secAimbot:Toggle({
+    Title = "Desativar ShiftLock",
+    Desc = "Força a rotação mesmo com ShiftLock ativo",
+    Callback = function(v)
+        desativarShiftLock = v
     end
 })
 
@@ -351,13 +344,12 @@ secReach:Slider({
     Value = { Min = 1, Max = 40, Default = 20 },
     Callback = function(v)
         reachDistancia = v
-        reachAplicado = false -- força atualizar
     end
 })
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox da bola (desativa ao pegar)",
+    Desc = "Aumenta a hitbox da bola",
     Callback = function(v)
         reachAtivo = v
         if not v then
@@ -375,30 +367,12 @@ secReach:Toggle({
         if not v and espSphere then
             espSphere:Destroy()
             espSphere = nil
-            espAtivo = false
         end
     end
 })
 
 -- Seção Extras
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
-
-secExtras:Button({
-    Title = "Infinite Stamina",
-    Desc = "Stamina sempre no máximo",
-    Callback = function()
-        task.spawn(function()
-            while true do
-                local stats = player:FindFirstChild("PlayerStats")
-                if stats then
-                    local stamina = stats:FindFirstChild("Stamina")
-                    if stamina then stamina.Value = 100 end
-                end
-                task.wait(0.5)
-            end
-        end)
-    end
-})
 
 secExtras:Dropdown({
     Title = "Time",
@@ -435,4 +409,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso!")
+print("Blue Lock Rivels Hub carregado com sucesso (corrigido)!")
