@@ -1,139 +1,54 @@
 --[[
-    Blue Lock Rivels Hub – Definitivo
-    - Reset da hitbox a cada 0.3s (evita bola gigante)
-    - Aimbot só desativa se VOCÊ estiver com a bola (verificação exclusiva por Workspace)
-    - Força do BodyGyro aumentada
-    - Câmera mais rápida
+    Blue Lock Rivels Hub – Com aimbot do código fornecido
 ]]
 
-local _ENV = getgenv()
-local player = game.Players.LocalPlayer
-local camera = game.Workspace.CurrentCamera
-local runService = game:GetService("RunService")
-
--- =====================================================
---  REFERÊNCIAS DA BOLA (CACHE)
--- =====================================================
-local bola = nil
-local hitbox = nil
-local bolaValida = false
-
--- =====================================================
---  ATUALIZA REFERÊNCIA DA BOLA (EVENTOS)
--- =====================================================
-local function atualizarReferenciaBola()
-    -- Procura bola solta ou em posse de alguém
-    for _, child in ipairs(workspace:GetChildren()) do
-        if child:IsA("Model") then
-            -- Se for um jogador, verifica se tem Football
-            local football = child:FindFirstChild("Football")
-            if football then
-                bola = football
-                local hb = bola:FindFirstChild("Hitbox")
-                if hb and hb:IsA("BasePart") then
-                    hitbox = hb
-                else
-                    hitbox = bola
-                end
-                bolaValida = true
-                return
-            end
-        elseif child.Name == "Football" then
-            -- Bola solta
-            bola = child
-            local hb = bola:FindFirstChild("Hitbox")
-            if hb and hb:IsA("BasePart") then
-                hitbox = hb
-            else
-                hitbox = bola
-            end
-            bolaValida = true
-            return
-        end
-    end
-    -- Se não achou, invalida
-    bola = nil
-    hitbox = nil
-    bolaValida = false
-end
-
--- Eventos para capturar mudanças
-workspace.ChildAdded:Connect(atualizarReferenciaBola)
-workspace.ChildRemoved:Connect(atualizarReferenciaBola)
-
--- Também escuta modelos (jogadores)
-for _, child in ipairs(workspace:GetChildren()) do
-    if child:IsA("Model") then
-        child.ChildAdded:Connect(atualizarReferenciaBola)
-        child.ChildRemoved:Connect(atualizarReferenciaBola)
-    end
-end
-
--- Inicializa
-atualizarReferenciaBola()
-
--- =====================================================
---  POSSE – APENAS POR Workspace.SeuNome.Football
--- =====================================================
-local function euTenhoBola()
-    -- Verifica se o modelo do jogador tem um filho "Football"
-    local meuModel = workspace:FindFirstChild(player.Name)
-    if meuModel and meuModel:FindFirstChild("Football") then
-        return true
-    end
-    return false
-end
-
--- =====================================================
---  VARIÁVEIS DE CONTROLE
--- =====================================================
-local aimbotPersonagem = false
-local aimbotCamera = false
-local reachAtivo = false
-local reachDistancia = 20
-local mostrarESP = false
-
-local gyro = nil
-local cameraSmooth = 0.08  -- mais rápido
-local selectedTeam = nil
-
-local espSphere = nil
-local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
-local hitboxOriginalTransparency = 0
-
--- =====================================================
---  VARIÁVEIS E LÓGICA DO CONTROLE DE BOLA
--- =====================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
-local velocidadeBola = 65
-local isControlActive = false
-local controlConnection = nil
-local controlScreenGui = nil
-local toggleButton = nil
+-- =====================================================
+--  REFERÊNCIAS DA BOLA (CACHE)
+-- =====================================================
+local target = nil
+local hitbox = nil
+local bolaValida = false
 
-local function safeParent(gui)
-    local ok = pcall(function()
-        if gethui then
-            gui.Parent = gethui()
-        elseif syn and syn.protect_gui then
-            syn.protect_gui(gui)
-            gui.Parent = CoreGui
-        else
-            gui.Parent = CoreGui
+local function atualizarReferenciaBola()
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") then
+            local football = child:FindFirstChild("Football")
+            if football then
+                target = football
+                local hb = target:FindFirstChild("Hitbox")
+                hitbox = (hb and hb:IsA("BasePart")) and hb or target
+                bolaValida = true
+                return
+            end
+        elseif child.Name == "Football" then
+            target = child
+            local hb = target:FindFirstChild("Hitbox")
+            hitbox = (hb and hb:IsA("BasePart")) and hb or target
+            bolaValida = true
+            return
         end
-    end)
-    if not ok then
-        gui.Parent = player:WaitForChild("PlayerGui")
     end
+    target = nil
+    hitbox = nil
+    bolaValida = false
 end
 
+Workspace.ChildAdded:Connect(atualizarReferenciaBola)
+Workspace.ChildRemoved:Connect(atualizarReferenciaBola)
+atualizarReferenciaBola()
+
+-- =====================================================
+--  GETBALL (PARA O BOTÃO DE CONTROLE)
+-- =====================================================
 local function getBall()
     local football = Workspace:FindFirstChild("Football")
     if football then
@@ -148,6 +63,162 @@ local function getBall()
     return nil
 end
 
+-- =====================================================
+--  POSSE DA BOLA (via HasBall)
+-- =====================================================
+local hasBallValue = nil
+local hasBallCache = false
+
+local function atualizarHasBall()
+    local model = Workspace:FindFirstChild(player.Name)
+    if model then
+        local values = model:FindFirstChild("Values")
+        if values then
+            local hb = values:FindFirstChild("HasBall")
+            if hb and hb:IsA("BoolValue") then
+                if hasBallValue ~= hb then
+                    hasBallValue = hb
+                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
+                        hasBallCache = hasBallValue.Value
+                    end)
+                end
+                hasBallCache = hb.Value
+                return
+            end
+        end
+    end
+    -- Fallback: verifica distância (menos confiável)
+    if hitbox and player.Character then
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hasBallCache = (hrp.Position - hitbox.Position).Magnitude < 2.5
+            return
+        end
+    end
+    hasBallCache = false
+end
+
+atualizarHasBall()
+
+-- Fallback: atualiza a cada frame para garantir
+RunService.Heartbeat:Connect(atualizarHasBall)
+
+-- =====================================================
+--  VARIÁVEIS DE CONTROLE
+-- =====================================================
+local aimbotPersonagem = false
+local aimbotCamera = false
+local reachAtivo = false
+local reachDistancia = 20
+local mostrarESP = false
+
+local velocidadeBola = 65
+local isControlActive = false
+local controlConnection = nil
+local controlScreenGui = nil
+local toggleButton = nil
+
+local connectionAimbot = nil
+local cameraSmooth = 0.08
+local selectedTeam = nil
+
+local espSphere = nil
+local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
+local hitboxOriginalTransparency = 0
+
+-- =====================================================
+--  AIMBOT PERSONAGEM (LÓGICA DO CÓDIGO FORNECIDO)
+-- =====================================================
+local function updateView()
+    -- Só executa se aimbotPersonagem estiver ativo, não tiver bola, e tiver referência válida
+    if not aimbotPersonagem then return end
+    if hasBallCache then return end  -- se estiver com a bola, não gira
+    if not player.Character or not target then return end
+
+    local character = player.Character
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChild("Humanoid")
+
+    if rootPart and humanoid then
+        -- Usa a posição da hitbox (se existir) ou da própria bola
+        local posAlvo = hitbox and hitbox.Position or target.Position
+        local targetPosition = Vector3.new(posAlvo.X, rootPart.Position.Y, posAlvo.Z)
+        local direction = (targetPosition - rootPart.Position).Unit
+        rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
+        
+        -- Câmera também segue (se aimbotCamera estiver ativo, usamos a lógica separada)
+        -- Aqui a câmera é opcional, mas mantemos a do código fornecido como fallback
+        if not aimbotCamera then
+            camera.CFrame = CFrame.new(
+                rootPart.Position - direction * 10 + Vector3.new(0, 5, 0), 
+                rootPart.Position
+            )
+        end
+    end
+end
+
+local function toggleAimbotPersonagem(estado)
+    aimbotPersonagem = estado
+    
+    if estado then
+        if connectionAimbot then connectionAimbot:Disconnect() end
+        connectionAimbot = RunService.RenderStepped:Connect(updateView)
+    else
+        if connectionAimbot then
+            connectionAimbot:Disconnect()
+            connectionAimbot = nil
+        end
+    end
+end
+
+-- =====================================================
+--  AIMBOT CÂMERA (SEPARADO)
+-- =====================================================
+local function atualizarAimbotCamera()
+    if isControlActive then return end
+    if not aimbotCamera or hasBallCache or not bolaValida or not hitbox then return end
+    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then return end
+
+    local posBola = hitbox.Position
+    local posCamera = camera.CFrame.Position
+    local novaPos = posCamera:Lerp(posBola, cameraSmooth)
+    camera.CFrame = CFrame.new(novaPos, posBola)
+end
+
+-- =====================================================
+--  CONTROLE DA HITBOX (UNIFICADO)
+-- =====================================================
+local function aplicarTamanhoHitbox()
+    if not hitbox then return end
+
+    local tenho = hasBallCache
+    local tamanhoDesejado
+    local transparenciaDesejada
+
+    if tenho or not reachAtivo then
+        tamanhoDesejado = hitboxOriginalSize
+        transparenciaDesejada = hitboxOriginalTransparency
+    else
+        tamanhoDesejado = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+        transparenciaDesejada = 1
+    end
+
+    if hitbox.Size ~= tamanhoDesejado or hitbox.Transparency ~= transparenciaDesejada then
+        hitbox.Size = tamanhoDesejado
+        hitbox.Transparency = transparenciaDesejada
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        aplicarTamanhoHitbox()
+    end
+end)
+
+-- =====================================================
+--  CONTROLE BOLA – BOTÃO FLUTUANTE
+-- =====================================================
 local function resetCamera()
     if player.Character and player.Character:FindFirstChild("Humanoid") then
         camera.CameraSubject = player.Character.Humanoid
@@ -190,13 +261,28 @@ local function toggleControl()
     end
 end
 
+local function safeParent(gui)
+    local ok = pcall(function()
+        if gethui then
+            gui.Parent = gethui()
+        elseif syn and syn.protect_gui then
+            syn.protect_gui(gui)
+            gui.Parent = CoreGui
+        else
+            gui.Parent = CoreGui
+        end
+    end)
+    if not ok then
+        gui.Parent = player:WaitForChild("PlayerGui")
+    end
+end
+
 local function criarBotaoFlutuante()
     if controlScreenGui then return end
 
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ControlBallGui"
     screenGui.ResetOnSpawn = false
-
     safeParent(screenGui)
 
     local btn = Instance.new("TextButton")
@@ -233,107 +319,10 @@ local function removerBotaoFlutuante()
 end
 
 -- =====================================================
---  RESET DA HITBOX (a cada 0.3 segundos)
--- =====================================================
-task.spawn(function()
-    while true do
-        task.wait(0.3)  -- a cada 0.3 segundos
-        if hitbox then
-            -- Se o reach estiver desativado OU se eu tiver a bola, restaura
-            if not reachAtivo or euTenhoBola() then
-                if hitbox.Size ~= hitboxOriginalSize or hitbox.Transparency ~= hitboxOriginalTransparency then
-                    hitbox.Size = hitboxOriginalSize
-                    hitbox.Transparency = hitboxOriginalTransparency
-                end
-            else
-                -- Se reach ativo, mantém grande (invisível)
-                hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
-                hitbox.Transparency = 1
-            end
-        end
-    end
-end)
-
--- =====================================================
---  AIMBOT PERSONAGEM (Força máxima)
--- =====================================================
-local function ativarAimbotPersonagem(estado)
-    aimbotPersonagem = estado
-    if not estado and gyro then
-        gyro:Destroy()
-        gyro = nil
-    end
-end
-
-local function atualizarAimbotPersonagem()
-    if not aimbotPersonagem then
-        if gyro then
-            gyro:Destroy()
-            gyro = nil
-        end
-        return
-    end
-
-    -- SÓ desativa se EU tiver a bola (verificação exclusiva)
-    if euTenhoBola() then
-        if gyro then
-            gyro:Destroy()
-            gyro = nil
-        end
-        return
-    end
-
-    if not bolaValida or not hitbox then
-        if gyro then
-            gyro:Destroy()
-            gyro = nil
-        end
-        return
-    end
-
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if not gyro then
-        gyro = Instance.new("BodyGyro")
-        gyro.Parent = hrp
-        gyro.D = 1000      -- mais forte
-        gyro.P = 10000     -- mais forte
-        gyro.MaxTorque = Vector3.new(8000, 8000, 8000)
-    end
-
-    local posBola = hitbox.Position
-    local posJogador = hrp.Position
-    local direcao = (Vector3.new(posBola.X, posJogador.Y, posBola.Z) - posJogador).Unit
-    gyro.CFrame = CFrame.lookAt(posJogador, posJogador + direcao)
-end
-
--- =====================================================
---  AIMBOT CÂMERA (mais rápida)
--- =====================================================
-local function atualizarAimbotCamera()
-    if not aimbotCamera then return end
-    if euTenhoBola() then return end
-    if not bolaValida or not hitbox then return end
-
-    -- Ignora chutes fortes (acima de 80)
-    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then
-        return
-    end
-
-    local posBola = hitbox.Position
-    local posCamera = camera.CFrame.Position
-    local novaPos = posCamera:Lerp(posBola, cameraSmooth)
-    camera.CFrame = CFrame.new(novaPos, posBola)
-end
-
--- =====================================================
---  ESP (verde)
+--  ESP
 -- =====================================================
 local function atualizarESP()
-    if euTenhoBola() or not mostrarESP or not hitbox then
+    if hasBallCache or not mostrarESP or not hitbox then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
@@ -355,32 +344,32 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  LOOP PRINCIPAL (fps otimizado)
+--  LOOP PRINCIPAL
 -- =====================================================
-runService.Heartbeat:Connect(function()
-    atualizarAimbotPersonagem()
+RunService.Heartbeat:Connect(function()
     atualizarAimbotCamera()
     atualizarESP()
+    -- O aimbot personagem é atualizado pelo connectionAimbot via RenderStepped
 end)
 
 -- =====================================================
---  UI
+--  INTERFACE WINDUI (UMA ÚNICA ABA)
 -- =====================================================
-local StarterGui = game:GetService("StarterGui")
-StarterGui:SetCore("SendNotification",{
-    Title = "Blue Lock Rivels",
-    Text = "Definitivo – Bola resetada + Aimbot grudado!",
-    Duration = 4
-})
+local WindUI
+local loaded, _ = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+end)
 
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+if not loaded or not WindUI then
+    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end
 
 local Window = WindUI:CreateWindow({
     Title = "⚽ Blue Lock Rivels",
     Icon = "rbxassetid://10723343321",
     Author = "Sor_Gostoso",
     Folder = "BlueLockHub",
-    Size = UDim2.fromOffset(480, 400),
+    Size = UDim2.fromOffset(480, 420),
     Transparent = true,
     Theme = "Dark",
     Resizable = true,
@@ -391,65 +380,7 @@ local Window = WindUI:CreateWindow({
 
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 
--- Seção Aimbot
-local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
-
-secAimbot:Toggle({
-    Title = "Aimbot Personagem (Grudado)",
-    Desc = "Corpo vira para a bola – só desativa se VOCÊ tiver",
-    Callback = function(v)
-        ativarAimbotPersonagem(v)
-    end
-})
-
-secAimbot:Toggle({
-    Title = "Aimbot Câmera (Rápida)",
-    Desc = "Câmera segue a bola – não desativa em chutes",
-    Callback = function(v)
-        aimbotCamera = v
-    end
-})
-
--- Seção Reach
-local secReach = MainTab:Section({ Title = "Reach (Magnet)", TextXAlignment = "Left" })
-
-secReach:Slider({
-    Title = "Alcance",
-    Desc = "Distância para pegar a bola",
-    Step = 1,
-    Value = { Min = 1, Max = 40, Default = 20 },
-    Callback = function(v)
-        reachDistancia = v
-        if espSphere then
-            espSphere.Scale = Vector3.new(v / 2.5, v / 2.5, v / 2.5)
-        end
-    end
-})
-
-secReach:Toggle({
-    Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox (invisível)",
-    Callback = function(v)
-        reachAtivo = v
-    end
-})
-
-secReach:Toggle({
-    Title = "Mostrar Área (ESP)",
-    Desc = "Círculo verde em volta da bola",
-    Callback = function(v)
-        mostrarESP = v
-        if not v and espSphere then
-            espSphere:Destroy()
-            espSphere = nil
-        end
-    end
-})
-
--- =====================================================
---  ELEMENTOS WINDUI (ADICIONE NA SUA ABA)
--- =====================================================
--- Certifique-se de que a variável 'MainTab' seja o nome da sua aba criada
+-- Seção Controle de Bola
 local secControleBola = MainTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
 
 secControleBola:Input({
@@ -477,6 +408,62 @@ secControleBola:Toggle({
     end
 })
 
+-- Seção Aimbot
+local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
+
+secAimbot:Toggle({
+    Title = "Aimbot Personagem (Grudado)",
+    Desc = "Corpo vira para a bola (usa CFrame, desativa ao pegar)",
+    Callback = function(v)
+        toggleAimbotPersonagem(v)
+    end
+})
+
+secAimbot:Toggle({
+    Title = "Aimbot Câmera (Rápida)",
+    Desc = "Câmera segue a bola",
+    Callback = function(v)
+        aimbotCamera = v
+    end
+})
+
+-- Seção Reach
+local secReach = MainTab:Section({ Title = "Reach (Magnet)", TextXAlignment = "Left" })
+
+secReach:Slider({
+    Title = "Alcance",
+    Desc = "Distância para pegar a bola",
+    Step = 1,
+    Value = { Min = 1, Max = 40, Default = 20 },
+    Callback = function(v)
+        reachDistancia = v
+        if espSphere then
+            espSphere.Scale = Vector3.new(v / 2.5, v / 2.5, v / 2.5)
+        end
+    end
+})
+
+secReach:Toggle({
+    Title = "Ativar Reach",
+    Desc = "Aumenta a hitbox (invisível)",
+    Callback = function(v)
+        reachAtivo = v
+        aplicarTamanhoHitbox()
+    end
+})
+
+secReach:Toggle({
+    Title = "Mostrar Área (ESP)",
+    Desc = "Círculo verde em volta da bola",
+    Callback = function(v)
+        mostrarESP = v
+        if not v and espSphere then
+            espSphere:Destroy()
+            espSphere = nil
+        end
+    end
+})
+
 -- Seção Extras
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
@@ -486,7 +473,6 @@ secExtras:Button({
     Callback = function()
         task.spawn(function()
             while true do
-                local player = game:GetService("Players").LocalPlayer
                 if player:FindFirstChild("PlayerStats") and player.PlayerStats:FindFirstChild("Stamina") then
                     player.PlayerStats.Stamina.Value = 100
                 end
@@ -509,11 +495,7 @@ secExtras:Button({
     Title = "Fazer Gol",
     Desc = "Marca um gol",
     Callback = function()
-        if not selectedTeam then
-            warn("Selecione um time primeiro!")
-            return
-        end
-
+        if not selectedTeam then return end
         local char = player.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -525,10 +507,31 @@ secExtras:Button({
         hrp.CFrame = CFrame.new(posGol)
         task.wait(0.2)
         local args = { [1] = 110, [4] = posGol }
-        game:GetService("ReplicatedStorage").Packages.Knit.Services.BallService.RE.Shoot:FireServer(unpack(args))
+        local ballService = ReplicatedStorage:FindFirstChild("Packages")
+        if ballService then
+            ballService = ballService:FindFirstChild("Knit")
+            if ballService then
+                ballService = ballService:FindFirstChild("Services")
+                if ballService then
+                    ballService = ballService:FindFirstChild("BallService")
+                    if ballService then
+                        local shoot = ballService:FindFirstChild("RE")
+                        if shoot then
+                            shoot:FireServer(unpack(args))
+                        end
+                    end
+                end
+            end
+        end
         task.wait(0.2)
         hrp.CFrame = CFrame.new(posOriginal)
     end
 })
 
-print("Blue Lock Rivels Hub – Definitivo carregado!")
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification",{
+        Title = "Blue Lock Rivels",
+        Text = "Aimbot do código fornecido integrado!",
+        Duration = 4
+    })
+end)
