@@ -1,21 +1,18 @@
 --[[
-    Blue Lock Rivels Hub – Tudo na Mesma Aba
-    - Seção Controle de Bola integrada à aba principal
-    - Busca exata de Workspace.Football.BallAnims
-    - Botão Flutuante (ON/OFF) funcional e arrastável
-    - Proteção para executores (SafeParent + Sem erro de _ENV)
+    Blue Lock Rivels Hub – Hitbox corrigida
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
 -- =====================================================
---  FUNÇÃO SEGURA DE PARENT (EVITA CRASH NO EXECUTOR)
+--  FUNÇÃO SEGURA DE PARENT
 -- =====================================================
 local function safeParent(gui)
     local ok = pcall(function()
@@ -34,7 +31,7 @@ local function safeParent(gui)
 end
 
 -- =====================================================
---  REFERÊNCIAS DA BOLA PARA AIMBOT / REACH
+--  REFERÊNCIAS DA BOLA (CACHE)
 -- =====================================================
 local bola = nil
 local hitbox = nil
@@ -69,7 +66,7 @@ Workspace.ChildRemoved:Connect(atualizarReferenciaBola)
 atualizarReferenciaBola()
 
 -- =====================================================
---  FUNÇÃO GETBALL (SUA LÓGICA EXATA)
+--  GETBALL (PARA O BOTÃO DE CONTROLE)
 -- =====================================================
 local function getBall()
     local football = Workspace:FindFirstChild("Football")
@@ -120,7 +117,42 @@ local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  LÓGICA CONTROLBALL & BOTÃO FLUTUANTE
+--  CONTROLE DA HITBOX (UNIFICADO E CORRIGIDO)
+-- =====================================================
+local function aplicarTamanhoHitbox()
+    if not hitbox then return end
+
+    local tenho = euTenhoBola()
+    local tamanhoDesejado
+    local transparenciaDesejada
+
+    if tenho or not reachAtivo then
+        -- Restaura o tamanho original
+        tamanhoDesejado = hitboxOriginalSize
+        transparenciaDesejada = hitboxOriginalTransparency
+    else
+        -- Reach ativo e você NÃO tem a bola → aumenta (invisível)
+        tamanhoDesejado = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+        transparenciaDesejada = 1  -- invisível
+    end
+
+    -- Aplica se houver diferença
+    if hitbox.Size ~= tamanhoDesejado or hitbox.Transparency ~= transparenciaDesejada then
+        hitbox.Size = tamanhoDesejado
+        hitbox.Transparency = transparenciaDesejada
+    end
+end
+
+-- Loop de reset a cada 0.3 segundos (chama a função unificada)
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        aplicarTamanhoHitbox()
+    end
+end)
+
+-- =====================================================
+--  CONTROLE BOLA – BOTÃO FLUTUANTE
 -- =====================================================
 local function resetCamera()
     if player.Character and player.Character:FindFirstChild("Humanoid") then
@@ -170,7 +202,6 @@ local function criarBotaoFlutuante()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ControlBallGui"
     screenGui.ResetOnSpawn = false
-
     safeParent(screenGui)
 
     local btn = Instance.new("TextButton")
@@ -207,27 +238,7 @@ local function removerBotaoFlutuante()
 end
 
 -- =====================================================
---  RESET DA HITBOX (0.3s)
--- =====================================================
-task.spawn(function()
-    while true do
-        task.wait(0.3)
-        if hitbox then
-            if not reachAtivo or euTenhoBola() then
-                if hitbox.Size ~= hitboxOriginalSize or hitbox.Transparency ~= hitboxOriginalTransparency then
-                    hitbox.Size = hitboxOriginalSize
-                    hitbox.Transparency = hitboxOriginalTransparency
-                end
-            else
-                hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
-                hitbox.Transparency = 1
-            end
-        end
-    end
-end)
-
--- =====================================================
---  AIMBOT & ESP
+--  AIMBOT
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -276,6 +287,9 @@ local function atualizarAimbotCamera()
     camera.CFrame = CFrame.new(novaPos, posBola)
 end
 
+-- =====================================================
+--  ESP
+-- =====================================================
 local function atualizarESP()
     if euTenhoBola() or not mostrarESP or not hitbox then
         if espSphere then
@@ -298,6 +312,9 @@ local function atualizarESP()
     espSphere.Scale = Vector3.new(scale, scale, scale)
 end
 
+-- =====================================================
+--  LOOP PRINCIPAL
+-- =====================================================
 RunService.Heartbeat:Connect(function()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
@@ -330,10 +347,9 @@ local Window = WindUI:CreateWindow({
     ScrollBarEnabled = false,
 })
 
--- Aba Única
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 
--- Seção Controle de Bola (Dentro da Aba Única)
+-- Seção Controle de Bola
 local secControleBola = MainTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
 
 secControleBola:Input({
@@ -398,9 +414,11 @@ secReach:Slider({
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox",
+    Desc = "Aumenta a hitbox (invisível)",
     Callback = function(v)
         reachAtivo = v
+        -- Aplica imediatamente a mudança
+        aplicarTamanhoHitbox()
     end
 })
 
@@ -459,7 +477,22 @@ secExtras:Button({
         hrp.CFrame = CFrame.new(posGol)
         task.wait(0.2)
         local args = { [1] = 110, [4] = posGol }
-        game:GetService("ReplicatedStorage").Packages.Knit.Services.BallService.RE.Shoot:FireServer(unpack(args))
+        local ballService = ReplicatedStorage:FindFirstChild("Packages")
+        if ballService then
+            ballService = ballService:FindFirstChild("Knit")
+            if ballService then
+                ballService = ballService:FindFirstChild("Services")
+                if ballService then
+                    ballService = ballService:FindFirstChild("BallService")
+                    if ballService then
+                        local shoot = ballService:FindFirstChild("RE")
+                        if shoot then
+                            shoot:FireServer(unpack(args))
+                        end
+                    end
+                end
+            end
+        end
         task.wait(0.2)
         hrp.CFrame = CFrame.new(posOriginal)
     end
@@ -468,7 +501,7 @@ secExtras:Button({
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification",{
         Title = "Blue Lock Rivels",
-        Text = "Hub executado com sucesso!",
+        Text = "Hitbox corrigida!",
         Duration = 4
     })
 end)
