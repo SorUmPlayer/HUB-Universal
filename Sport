@@ -1,5 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Com Controle de Bola e Botão Flutuante
+    Blue Lock Rivels Hub – Com Controle de Bola (Voa na direção da câmera)
 ]]
 
 local _ENV = getgenv()
@@ -14,6 +14,7 @@ local players = game:GetService("Players")
 -- =====================================================
 local controlBallActive = false
 local controlBallButton = nil
+local controlBallGUI = nil  -- para esconder/mostrar
 local isDragging = false
 local dragStart = nil
 local buttonStartPos = nil
@@ -91,6 +92,7 @@ local aimbotCamera = false
 local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
+local mostrarBotao = true  -- toggle para mostrar/esconder o botão
 
 local gyro = nil
 local cameraSmooth = 0.08
@@ -208,45 +210,44 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  CONTROLE DE BOLA
+--  CONTROLE DE BOLA (voador – direção da câmera)
 -- =====================================================
 local function controlarBola()
     if not controlBallActive then return end
     if not bolaValida or not hitbox then return end
 
-    -- Verifica se o jogador está perto da bola (alcance do reach)
     local char = player.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
+    -- Distância entre jogador e bola
     local dist = (hrp.Position - hitbox.Position).Magnitude
+
+    -- Se a bola estiver longe, puxa para perto (usando o reach)
     if dist > reachDistancia then
-        -- Se a bola estiver longe, puxa ela para perto
         local direcao = (hrp.Position - hitbox.Position).Unit
         hitbox.CFrame = CFrame.new(hrp.Position - direcao * 3)
         return
     end
 
-    -- Pega a direção da câmera
-    local cameraDirection = camera.CFrame.LookVector
-    local cameraPosition = camera.CFrame.Position
+    -- Calcula a posição alvo: ponto na direção da câmera a uma distância fixa
+    local cameraDirecao = camera.CFrame.LookVector
+    local cameraPos = camera.CFrame.Position
 
-    -- Define a nova posição da bola baseada na direção da câmera
-    -- A bola fica na frente do jogador na direção da câmera
-    local distanciaBola = 5 -- distância da bola em relação ao jogador
-    local novaPosicao = hrp.Position + cameraDirection * distanciaBola
+    -- A bola ficará a 5 unidades na direção da câmera a partir da posição do jogador
+    local distanciaBola = 5
+    local posAlvo = hrp.Position + cameraDirecao * distanciaBola
+    -- Mantém a bola na altura do peito
+    posAlvo = Vector3.new(posAlvo.X, hrp.Position.Y + 1.5, posAlvo.Z)
 
-    -- Mantém a bola na altura do peito do jogador
-    novaPosicao = Vector3.new(novaPosicao.X, hrp.Position.Y + 1.5, novaPosicao.Z)
-
-    -- Move a bola suavemente para a nova posição
-    hitbox.CFrame = CFrame.new(novaPosicao)
+    -- Move a bola suavemente para a posição alvo
+    hitbox.CFrame = CFrame.new(posAlvo)
 
     -- A câmera fica atrás da bola (como se estivesse controlando a bola)
-    local cameraOffset = cameraDirection * -8 + Vector3.new(0, 3, 0)
-    local novaPosCamera = novaPosicao + cameraOffset
-    camera.CFrame = CFrame.new(novaPosCamera, novaPosicao)
+    local cameraOffset = cameraDirecao * -8 + Vector3.new(0, 3, 0)
+    local novaPosCamera = posAlvo + cameraOffset
+    camera.CFrame = CFrame.new(novaPosCamera, posAlvo)
 end
 
 -- =====================================================
@@ -312,7 +313,6 @@ runService.Heartbeat:Connect(function()
     aplicarReach()
     atualizarESP()
 
-    -- Controle de Bola (executa a cada frame se ativo)
     if controlBallActive then
         controlarBola()
     end
@@ -326,11 +326,12 @@ local function criarBotaoFlutuante()
     screenGui.Name = "ControlBallGUI"
     screenGui.Parent = player.PlayerGui
     screenGui.ResetOnSpawn = false
+    controlBallGUI = screenGui
 
     local button = Instance.new("TextButton")
     button.Name = "ControlBallButton"
     button.Size = UDim2.new(0, 120, 0, 40)
-    button.Position = UDim2.new(0.85, 0, 0.5, 0) -- canto direito
+    button.Position = UDim2.new(0.85, 0, 0.5, 0)
     button.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho (desligado)
     button.BackgroundTransparency = 0.2
     button.Text = "Control Ball v1"
@@ -340,12 +341,10 @@ local function criarBotaoFlutuante()
     button.BorderSizePixel = 0
     button.Parent = screenGui
 
-    -- Arredondar bordas
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = button
 
-    -- Sombra
     local shadow = Instance.new("ImageLabel")
     shadow.Name = "Shadow"
     shadow.Image = "rbxassetid://13160458777"
@@ -357,33 +356,28 @@ local function criarBotaoFlutuante()
     shadow.ZIndex = 0
     shadow.Parent = button
 
-    -- Função para atualizar a cor do botão
     local function atualizarCorBotao(ativo)
         if ativo then
-            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Verde
+            button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
             button.Text = "Control Ball v1 ✅"
         else
-            button.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho
+            button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
             button.Text = "Control Ball v1 ❌"
         end
     end
 
-    -- Clique do botão
     button.MouseButton1Click:Connect(function()
         controlBallActive = not controlBallActive
         atualizarCorBotao(controlBallActive)
 
-        -- Notificação
         local status = controlBallActive and "ATIVADO" or "DESATIVADO"
-        StarterGui:SetCore("SendNotification", {
+        game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = "Controle de Bola",
             Text = "Controle de Bola " .. status .. "!",
             Duration = 2
         })
 
-        -- Se ativou, desativa os aimbots
         if controlBallActive then
-            -- Desativa aimbots (mas mantém as variáveis para reativar depois)
             if gyro then
                 gyro:Destroy()
                 gyro = nil
@@ -391,7 +385,7 @@ local function criarBotaoFlutuante()
         end
     end)
 
-    -- Sistema de arrastar (para mover o botão)
+    -- Sistema de arrastar
     local dragging = false
     local dragStartPos = nil
     local buttonStartPos = nil
@@ -418,7 +412,6 @@ local function criarBotaoFlutuante()
                 buttonStartPos.Y.Scale,
                 buttonStartPos.Y.Offset + delta.Y
             )
-            -- Limita para não sair da tela
             newPos = UDim2.new(
                 math.clamp(newPos.X.Scale, 0, 1),
                 math.clamp(newPos.X.Offset, 0, 500),
@@ -429,14 +422,11 @@ local function criarBotaoFlutuante()
         end
     end)
 
-    -- Inicializa a cor
     atualizarCorBotao(false)
-
     controlBallButton = button
     return button
 end
 
--- Cria o botão
 criarBotaoFlutuante()
 
 -- =====================================================
@@ -445,7 +435,7 @@ criarBotaoFlutuante()
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification", {
     Title = "Blue Lock Rivels",
-    Text = "Carregado! Botão flutuante adicionado!",
+    Text = "Carregado! Botão flutuante + Toggle para esconder.",
     Duration = 4
 })
 
@@ -456,7 +446,7 @@ local Window = WindUI:CreateWindow({
     Icon = "rbxassetid://10723343321",
     Author = "Sor_Gostoso",
     Folder = "BlueLockHub",
-    Size = UDim2.fromOffset(480, 400),
+    Size = UDim2.fromOffset(480, 450),
     Transparent = true,
     Theme = "Dark",
     Resizable = true,
@@ -525,6 +515,18 @@ secReach:Toggle({
 -- Seção Extras
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
+secExtras:Toggle({
+    Title = "Mostrar Botão Flutuante",
+    Desc = "Exibe ou oculta o botão 'Control Ball v1' na tela",
+    Default = true,
+    Callback = function(v)
+        mostrarBotao = v
+        if controlBallGUI then
+            controlBallGUI.Enabled = v
+        end
+    end
+})
+
 secExtras:Button({
     Title = "Infinite Stamina",
     Desc = "Stamina infinita",
@@ -576,4 +578,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub – Com Controle de Bola carregado!")
+print("Blue Lock Rivels Hub – Atualizado com Controle de Bola voador e toggle do botão!")
