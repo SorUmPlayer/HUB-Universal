@@ -1,8 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Otimizado para servidores públicos
-    - Cache da bola e hitbox por eventos
-    - Loop com throttling (executa a cada 2 frames)
-    - Aimbot estável mesmo com muitos jogadores
+    Blue Lock Rivels Hub – Sem bola gigante
 ]]
 
 local _ENV = getgenv()
@@ -11,77 +8,73 @@ local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 
 -- =====================================================
---  REFERÊNCIAS DA BOLA (cache)
+--  DETECÇÃO DA BOLA E HITBOX (SEPARADAS)
 -- =====================================================
-local bola = nil
+local bolaVisual = nil
 local hitbox = nil
-local bolaValida = false
+local hitboxCriada = false
 
--- =====================================================
---  ATUALIZA REFERÊNCIA DA BOLA (chamado por eventos)
--- =====================================================
-local function atualizarReferenciaBola()
-    -- Procura a bola solta (Workspace.Football)
-    local football = workspace:FindFirstChild("Football")
-    if football then
-        bola = football
-        -- Tenta achar hitbox
-        local hb = bola:FindFirstChild("Hitbox")
-        if hb and hb:IsA("BasePart") then
-            hitbox = hb
-        else
-            hitbox = bola -- usa a própria bola
-        end
-        bolaValida = true
-        return
-    end
-
-    -- Procura bola em posse de algum jogador (Workspace.Nome.Football)
-    for _, child in ipairs(workspace:GetChildren()) do
-        if child:IsA("Model") and child:FindFirstChild("Football") then
-            local footballInPlayer = child:FindFirstChild("Football")
-            if footballInPlayer then
-                bola = footballInPlayer
-                local hb = bola:FindFirstChild("Hitbox")
-                if hb and hb:IsA("BasePart") then
-                    hitbox = hb
-                else
-                    hitbox = bola
+local function encontrarBola()
+    -- Procura a bola visual (qualquer parte com "ball" no nome)
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
+            bolaVisual = obj
+            -- Tenta achar um filho chamado "Hitbox"
+            local hb = obj:FindFirstChild("Hitbox")
+            if hb and hb:IsA("BasePart") then
+                hitbox = hb
+            else
+                -- Se não tem hitbox, CRIAMOS UMA HITBOX INVISÍVEL
+                if not hitboxCriada then
+                    hitbox = Instance.new("Part")
+                    hitbox.Name = "Hitbox"
+                    hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
+                    hitbox.Transparency = 1
+                    hitbox.CanCollide = false
+                    hitbox.Anchored = true
+                    hitbox.Parent = obj
+                    hitboxCriada = true
                 end
-                bolaValida = true
-                return
+                -- Atualiza a posição da hitbox para seguir a bola visual
+                if hitbox then
+                    hitbox.CFrame = obj.CFrame
+                end
             end
+            return
         end
     end
-
-    -- Se não achou, invalida
-    bola = nil
+    -- Se não achou bola, reseta
+    bolaVisual = nil
     hitbox = nil
-    bolaValida = false
 end
 
--- =====================================================
---  EVENTOS PARA MANTER CACHE ATUALIZADO
--- =====================================================
-workspace.ChildAdded:Connect(atualizarReferenciaBola)
-workspace.ChildRemoved:Connect(atualizarReferenciaBola)
--- Também escuta mudanças nos filhos dos jogadores (quando pegam/soltam a bola)
+-- Atualiza a posição da hitbox (se criada) a cada frame
+local function atualizarPosicaoHitbox()
+    if hitbox and hitboxCriada and bolaVisual then
+        hitbox.CFrame = bolaVisual.CFrame
+    end
+end
+
+-- Encontra a bola inicial
+encontrarBola()
+
+-- Escuta mudanças no workspace para detectar quando a bola aparece/desaparece
+workspace.ChildAdded:Connect(encontrarBola)
+workspace.ChildRemoved:Connect(encontrarBola)
+-- Também escuta mudanças dentro dos modelos (jogadores)
 for _, child in ipairs(workspace:GetChildren()) do
     if child:IsA("Model") then
-        child.ChildAdded:Connect(atualizarReferenciaBola)
-        child.ChildRemoved:Connect(atualizarReferenciaBola)
+        child.ChildAdded:Connect(encontrarBola)
+        child.ChildRemoved:Connect(encontrarBola)
     end
 end
 
--- Inicializa
-atualizarReferenciaBola()
-
 -- =====================================================
---  POSSE (cada frame, mas com cache)
+--  POSSE (Workspace + Distância)
 -- =====================================================
 local tenhoBolaCache = false
 local lastPosseCheck = 0
-local posseCheckInterval = 0.2 -- segundos
+local posseCheckInterval = 0.2
 
 local function euTenhoBola()
     local now = tick()
@@ -97,15 +90,12 @@ local function euTenhoBola()
         return true
     end
 
-    -- 2) Distância da hitbox < 2.5 (fallback)
+    -- 2) Distância da hitbox < 2.5
     if hitbox and player.Character then
         local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local dist = (hrp.Position - hitbox.Position).Magnitude
-            if dist < 2.5 then
-                tenhoBolaCache = true
-                return true
-            end
+        if hrp and (hrp.Position - hitbox.Position).Magnitude < 2.5 then
+            tenhoBolaCache = true
+            return true
         end
     end
 
@@ -114,7 +104,7 @@ local function euTenhoBola()
 end
 
 -- =====================================================
---  VARIÁVEIS DE CONTROLE
+--  VARIÁVEIS
 -- =====================================================
 local aimbotPersonagem = false
 local aimbotCamera = false
@@ -128,11 +118,6 @@ local selectedTeam = nil
 
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
-local hitboxOriginalTransparency = 0
-
--- Contador de frames para throttling
-local frameCounter = 0
-local framesToSkip = 2 -- executa a cada 2 frames
 
 -- =====================================================
 --  RESTAURA HITBOX
@@ -140,7 +125,6 @@ local framesToSkip = 2 -- executa a cada 2 frames
 local function restaurarHitbox()
     if hitbox then
         hitbox.Size = hitboxOriginalSize
-        hitbox.Transparency = hitboxOriginalTransparency
     end
 end
 
@@ -172,13 +156,7 @@ local function atualizarAimbotPersonagem()
         return
     end
 
-    if not bolaValida or not hitbox then
-        if gyro then
-            gyro:Destroy()
-            gyro = nil
-        end
-        return
-    end
+    if not hitbox then return end
 
     local char = player.Character
     if not char then return end
@@ -205,9 +183,8 @@ end
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
     if euTenhoBola() then return end
-    if not bolaValida or not hitbox then return end
+    if not hitbox then return end
 
-    -- Não força durante chute forte
     if hitbox.AssemblyLinearVelocity.Magnitude > 60 then
         return
     end
@@ -219,7 +196,7 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH
+--  REACH (APENAS NA HITBOX, NUNCA NA BOLA VISUAL)
 -- =====================================================
 local reachAplicado = false
 
@@ -237,7 +214,6 @@ local function aplicarReach()
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
-        hitbox.Transparency = 1 -- invisível
         reachAplicado = true
     else
         reachAplicado = true
@@ -245,7 +221,7 @@ local function aplicarReach()
 end
 
 -- =====================================================
---  ESP
+--  ESP (CÍRCULO VERDE NA HITBOX)
 -- =====================================================
 local function atualizarESP()
     if euTenhoBola() or not mostrarESP or not hitbox then
@@ -270,18 +246,21 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  LOOP PRINCIPAL COM THROTTLING
+--  LOOP PRINCIPAL (com throttling)
 -- =====================================================
+local frameCounter = 0
+local framesToSkip = 2
+
 runService.Heartbeat:Connect(function()
     frameCounter = frameCounter + 1
     if frameCounter % (framesToSkip + 1) ~= 0 then
-        -- Pula este frame
         return
     end
 
-    -- Atualiza cache da posse (já tem throttling interno)
-    euTenhoBola()
+    -- Mantém a hitbox (se criada) na posição da bola visual
+    atualizarPosicaoHitbox()
 
+    euTenhoBola()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
@@ -289,12 +268,12 @@ runService.Heartbeat:Connect(function()
 end)
 
 -- =====================================================
---  UI – WindUI
+--  UI
 -- =====================================================
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Otimizado para servidores públicos!",
+    Text = "Sem bola gigante!",
     Duration = 3
 })
 
@@ -366,7 +345,7 @@ secReach:Toggle({
 
 secReach:Toggle({
     Title = "Mostrar Área (ESP)",
-    Desc = "Círculo verde em volta da bola",
+    Desc = "Círculo verde na hitbox",
     Callback = function(v)
         mostrarESP = v
         if not v and espSphere then
@@ -430,4 +409,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub otimizado carregado!")
+print("Blue Lock Rivels Hub – sem bola gigante carregado!")
