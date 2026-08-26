@@ -1,7 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Corrigido
-    - Aimbot só desativa quando VOCÊ tem a bola
-    - Hitbox restaurada corretamente
+    Blue Lock Rivels Hub – Corrigido (desativa só quando VOCÊ tem a bola)
 ]]
 
 local _ENV = getgenv()
@@ -52,78 +50,34 @@ local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  DETECÇÃO DE POSSE (CORRIGIDA)
+--  POSSE – SOMENTE DO JOGADOR LOCAL (SEM FALLBACK)
 -- =====================================================
 local euTenhoBola = false
-local outroTemBola = false
+local hasBallValue = nil
 
 local function atualizarPosse()
-    -- Verifica se o jogador atual tem a bola
     local model = workspace:FindFirstChild(player.Name)
     if model then
         local values = model:FindFirstChild("Values")
         if values then
             local hb = values:FindFirstChild("HasBall")
             if hb and hb:IsA("BoolValue") then
+                if hasBallValue ~= hb then
+                    hasBallValue = hb
+                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
+                        euTenhoBola = hasBallValue.Value
+                    end)
+                end
                 euTenhoBola = hb.Value
+                return
             end
         end
     end
-    
-    -- Se não achou o HasBall, fallback por distância
-    if not euTenhoBola then
-        local hitbox = getHitbox()
-        if hitbox and player.Character then
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                euTenhoBola = (hrp.Position - hitbox.Position).Magnitude < 2.5
-            end
-        end
-    end
-    
-    -- Verifica se outro jogador tem a bola
-    outroTemBola = false
-    for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherModel = workspace:FindFirstChild(otherPlayer.Name)
-            if otherModel then
-                local values = otherModel:FindFirstChild("Values")
-                if values then
-                    local hb = values:FindFirstChild("HasBall")
-                    if hb and hb:IsA("BoolValue") and hb.Value then
-                        outroTemBola = true
-                        break
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Se não achou HasBall de outros, verifica se a hitbox está perto de outro jogador
-    if not outroTemBola then
-        local hitbox = getHitbox()
-        if hitbox then
-            for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
-                if otherPlayer ~= player then
-                    local char = otherPlayer.Character
-                    if char then
-                        local hrp = char:FindFirstChild("HumanoidRootPart")
-                        if hrp and (hrp.Position - hitbox.Position).Magnitude < 3 then
-                            outroTemBola = true
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end
+    -- Se não encontrou o HasBall, assume que não tem a bola
+    euTenhoBola = false
 end
 
 atualizarPosse()
-
--- Atualiza a posse sempre que mudar
-game.Players.PlayerAdded:Connect(atualizarPosse)
-game.Players.PlayerRemoving:Connect(atualizarPosse)
 
 -- =====================================================
 --  RESTAURA HITBOX
@@ -137,7 +91,7 @@ local function restaurarHitbox()
 end
 
 -- =====================================================
---  AIMBOT PERSONAGEM (só desativa se EU tiver a bola)
+--  AIMBOT PERSONAGEM
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -156,7 +110,7 @@ local function atualizarAimbotPersonagem()
         return 
     end
     
-    -- Só desativa se EU tiver a bola (não se outro tiver)
+    -- SÓ desativa se EU tiver a bola
     if euTenhoBola then
         if gyro then
             gyro:Destroy()
@@ -188,16 +142,15 @@ local function atualizarAimbotPersonagem()
 end
 
 -- =====================================================
---  AIMBOT CÂMERA (só desativa se EU tiver a bola)
+--  AIMBOT CÂMERA
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
-    if euTenhoBola then return end
+    if euTenhoBola then return end  -- SÓ desativa se EU tiver
     
     local hitbox = getHitbox()
     if not hitbox then return end
     
-    -- Não força câmera durante chute
     if hitbox.AssemblyLinearVelocity.Magnitude > 50 then
         return
     end
@@ -209,12 +162,12 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH (desativa só se EU tiver a bola)
+--  REACH
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
-    -- Só desativa se EU tiver a bola (se outro tiver, continua ativo)
+    -- SÓ desativa se EU tiver a bola
     if euTenhoBola or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
@@ -235,7 +188,7 @@ local function aplicarReach()
 end
 
 -- =====================================================
---  ESP (desativa só se EU tiver a bola)
+--  ESP
 -- =====================================================
 local function atualizarESP()
     if euTenhoBola or not mostrarESP then
@@ -274,7 +227,7 @@ end
 --  LOOP PRINCIPAL
 -- =====================================================
 runService.Heartbeat:Connect(function()
-    atualizarPosse() -- atualiza a cada frame para detectar mudanças
+    atualizarPosse()  -- mantém atualizado
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
