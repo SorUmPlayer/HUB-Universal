@@ -1,5 +1,7 @@
 --[[
-    Blue Lock Rivels Hub – Corrigido (desativa só quando VOCÊ tem a bola)
+    Blue Lock Rivels Hub – Definitivo
+    - Aimbot só desativa se VOCÊ tiver a bola
+    - Reach não deixa a bola "grandona" visualmente
 ]]
 
 local _ENV = getgenv()
@@ -47,37 +49,23 @@ local selectedTeam = nil
 
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
-local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  POSSE – SOMENTE DO JOGADOR LOCAL (SEM FALLBACK)
+--  POSSE – APENAS PELO HasBall DO JOGADOR (SEM FALLBACK)
 -- =====================================================
-local euTenhoBola = false
-local hasBallValue = nil
-
-local function atualizarPosse()
+local function euTenhoBola()
     local model = workspace:FindFirstChild(player.Name)
     if model then
         local values = model:FindFirstChild("Values")
         if values then
             local hb = values:FindFirstChild("HasBall")
             if hb and hb:IsA("BoolValue") then
-                if hasBallValue ~= hb then
-                    hasBallValue = hb
-                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
-                        euTenhoBola = hasBallValue.Value
-                    end)
-                end
-                euTenhoBola = hb.Value
-                return
+                return hb.Value
             end
         end
     end
-    -- Se não encontrou o HasBall, assume que não tem a bola
-    euTenhoBola = false
+    return false
 end
-
-atualizarPosse()
 
 -- =====================================================
 --  RESTAURA HITBOX
@@ -86,7 +74,7 @@ local function restaurarHitbox()
     local hitbox = getHitbox()
     if hitbox then
         hitbox.Size = hitboxOriginalSize
-        hitbox.Transparency = hitboxOriginalTransparency
+        hitbox.Transparency = 0 -- volta ao normal
     end
 end
 
@@ -111,7 +99,7 @@ local function atualizarAimbotPersonagem()
     end
     
     -- SÓ desativa se EU tiver a bola
-    if euTenhoBola then
+    if euTenhoBola() then
         if gyro then
             gyro:Destroy()
             gyro = nil
@@ -146,7 +134,7 @@ end
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
-    if euTenhoBola then return end  -- SÓ desativa se EU tiver
+    if euTenhoBola() then return end  -- só desativa se EU tiver
     
     local hitbox = getHitbox()
     if not hitbox then return end
@@ -162,13 +150,13 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH
+--  REACH (sem transparência, só aumenta o tamanho)
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
     -- SÓ desativa se EU tiver a bola
-    if euTenhoBola or not reachAtivo then
+    if euTenhoBola() or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
             reachAplicado = false
@@ -182,7 +170,7 @@ local function aplicarReach()
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
-        hitbox.Transparency = 0.5
+        -- NÃO ALTERA A TRANSPARÊNCIA – fica invisível
         reachAplicado = true
     end
 end
@@ -191,7 +179,7 @@ end
 --  ESP
 -- =====================================================
 local function atualizarESP()
-    if euTenhoBola or not mostrarESP then
+    if euTenhoBola() or not mostrarESP then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
@@ -227,7 +215,6 @@ end
 --  LOOP PRINCIPAL
 -- =====================================================
 runService.Heartbeat:Connect(function()
-    atualizarPosse()  -- mantém atualizado
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
@@ -240,7 +227,7 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Corrigido)",
+    Text = "Carregado! (Definitivo)",
     Duration = 3
 })
 
@@ -296,7 +283,7 @@ secReach:Slider({
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox da bola (só desativa se VOCÊ tiver)",
+    Desc = "Aumenta a hitbox (invisível, só tamanho)",
     Callback = function(v)
         reachAtivo = v
         if not v then
@@ -372,4 +359,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso (corrigido)!")
+print("Blue Lock Rivels Hub carregado com sucesso (definitivo)!")
