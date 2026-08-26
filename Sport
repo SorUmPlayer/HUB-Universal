@@ -1,5 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Dupla Verificação + ESP Corrigido
+    Blue Lock Rivels Hub – Reach Corrigido
 ]]
 
 local _ENV = getgenv()
@@ -8,11 +8,14 @@ local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 
 -- =====================================================
---  DETECÇÃO DA BOLA
+--  DETECÇÃO DA BOLA (mais robusta)
 -- =====================================================
 local function getBall()
+    -- Procura em workspace
     local football = workspace:FindFirstChild("Football")
     if football then return football end
+
+    -- Procura qualquer parte com "ball" no nome
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
             return obj
@@ -23,45 +26,42 @@ end
 
 local function getHitbox()
     local ball = getBall()
-    if ball then
-        if ball.Name == "Hitbox" then return ball end
-        local hitbox = ball:FindFirstChild("Hitbox")
-        if hitbox and hitbox:IsA("BasePart") then return hitbox end
-        return ball
-    end
-    return nil
+    if not ball then return nil end
+
+    -- Se a própria bola for a hitbox (ex: Football é a hitbox)
+    if ball.Name == "Hitbox" then return ball end
+
+    -- Procura filho chamado Hitbox
+    local hitbox = ball:FindFirstChild("Hitbox")
+    if hitbox and hitbox:IsA("BasePart") then return hitbox end
+
+    -- Fallback: usa a própria bola como hitbox
+    return ball
 end
 
 -- =====================================================
---  DUPLA VERIFICAÇÃO DE POSSE (Workspace + Distância)
+--  POSSE (Workspace + Distância)
 -- =====================================================
 local function euTenhoBola()
-    -- Verificação 1: Existe Workspace.SeuNome.Football?
+    -- 1) Workspace.SeuNome.Football existe?
     local meuFootball = workspace:FindFirstChild(player.Name)
-    if meuFootball then
-        local football = meuFootball:FindFirstChild("Football")
-        if football then
-            return true
-        end
+    if meuFootball and meuFootball:FindFirstChild("Football") then
+        return true
     end
-    
-    -- Verificação 2: Distância entre você e a hitbox da bola < 2.5
+
+    -- 2) Distância da hitbox < 2.5
     local hitbox = getHitbox()
     if hitbox and player.Character then
         local hrp = player.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
-            local dist = (hrp.Position - hitbox.Position).Magnitude
-            if dist < 2.5 then
-                return true
-            end
+            return (hrp.Position - hitbox.Position).Magnitude < 2.5
         end
     end
-    
     return false
 end
 
 -- =====================================================
---  VARIÁVEIS DE CONTROLE
+--  VARIÁVEIS
 -- =====================================================
 local aimbotPersonagem = false
 local aimbotCamera = false
@@ -73,7 +73,7 @@ local gyro = nil
 local cameraSmooth = 0.15
 local selectedTeam = nil
 
-local espObject = nil  -- vai ser um Highlight ou Part
+local espObject = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 
 -- =====================================================
@@ -99,15 +99,14 @@ local function ativarAimbotPersonagem(estado)
 end
 
 local function atualizarAimbotPersonagem()
-    if not aimbotPersonagem then 
+    if not aimbotPersonagem then
         if gyro then
             gyro:Destroy()
             gyro = nil
         end
-        return 
+        return
     end
-    
-    -- SÓ desativa se EU tiver a bola (dupla verificação)
+
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -115,12 +114,12 @@ local function atualizarAimbotPersonagem()
         end
         return
     end
-    
+
     local char = player.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    
+
     local hitbox = getHitbox()
     if not hitbox then return end
 
@@ -144,14 +143,14 @@ end
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
     if euTenhoBola() then return end
-    
+
     local hitbox = getHitbox()
     if not hitbox then return end
-    
+
     if hitbox.AssemblyLinearVelocity.Magnitude > 50 then
         return
     end
-    
+
     local posBola = hitbox.Position
     local posCamera = camera.CFrame.Position
     local novaPos = posCamera:Lerp(posBola, cameraSmooth)
@@ -159,11 +158,12 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH (invisível)
+--  REACH (MAGNET) – CORRIGIDO
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
+    -- Se EU estiver com a bola OU Reach desativado, restaura
     if euTenhoBola() or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
@@ -171,20 +171,27 @@ local function aplicarReach()
         end
         return
     end
-    
+
     local hitbox = getHitbox()
-    if not hitbox then return end
-    
+    if not hitbox then
+        -- Se não achou hitbox, tenta novamente depois
+        return
+    end
+
+    -- Força o novo tamanho (mesmo que igual, garante a aplicação)
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
-        hitbox.Transparency = 0  -- invisível
+        hitbox.Transparency = 0  -- mantém invisível
+        reachAplicado = true
+    else
+        -- Se o tamanho já estiver correto, apenas marca como aplicado
         reachAplicado = true
     end
 end
 
 -- =====================================================
---  ESP CORRIGIDO (Highlight com cor verde)
+--  ESP (Highlight verde)
 -- =====================================================
 local function atualizarESP()
     if euTenhoBola() or not mostrarESP then
@@ -194,7 +201,7 @@ local function atualizarESP()
         end
         return
     end
-    
+
     local hitbox = getHitbox()
     if not hitbox then
         if espObject then
@@ -203,28 +210,19 @@ local function atualizarESP()
         end
         return
     end
-    
-    -- Se não existe, cria um Highlight
+
     if not espObject then
         local highlight = Instance.new("Highlight")
         highlight.Name = "ReachESP"
         highlight.Adornee = hitbox
-        highlight.FillColor = Color3.fromRGB(0, 255, 100)  -- verde
+        highlight.FillColor = Color3.fromRGB(0, 255, 100)
         highlight.FillTransparency = 0.7
         highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
         highlight.OutlineTransparency = 0.5
         highlight.Parent = hitbox
         espObject = highlight
     end
-    
-    -- Ajusta o tamanho do Highlight com base no alcance (opcional)
-    -- O Highlight não tem escala, mas podemos usar um modelo de esfera
-    -- Alternativa: usar uma SelectionSphere com cor forçada
-    -- Vou manter Highlight, é mais limpo
 end
-
--- (Alternativa: Se o Highlight não aparecer, usamos SelectionSphere com cor forçada)
--- Vou deixar a SelectionSphere como fallback, mas vou forçar a cor
 
 -- =====================================================
 --  LOOP PRINCIPAL
@@ -237,12 +235,12 @@ runService.Heartbeat:Connect(function()
 end)
 
 -- =====================================================
---  UI – WindUI
+--  UI
 -- =====================================================
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Dupla Verificação)",
+    Text = "Reach Corrigido!",
     Duration = 3
 })
 
@@ -269,7 +267,7 @@ local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
     Title = "Aimbot Personagem",
-    Desc = "Seu corpo vira para a bola (só desativa se VOCÊ tiver)",
+    Desc = "Corpo vira para a bola",
     Callback = function(v)
         ativarAimbotPersonagem(v)
     end
@@ -277,7 +275,7 @@ secAimbot:Toggle({
 
 secAimbot:Toggle({
     Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola (só desativa se VOCÊ tiver)",
+    Desc = "Câmera segue a bola",
     Callback = function(v)
         aimbotCamera = v
     end
@@ -310,7 +308,7 @@ secReach:Toggle({
 
 secReach:Toggle({
     Title = "Mostrar Área (ESP)",
-    Desc = "Highlight verde em volta da bola",
+    Desc = "Highlight verde na bola",
     Callback = function(v)
         mostrarESP = v
         if not v and espObject then
@@ -325,7 +323,7 @@ local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
 secExtras:Button({
     Title = "Infinite Stamina",
-    Desc = "No Decrease In Stamina",
+    Desc = "Stamina infinita",
     Callback = function()
         task.spawn(function()
             while true do
@@ -374,4 +372,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso (dupla verificação + ESP corrigido)!")
+print("Blue Lock Rivels Hub – Reach corrigido!")
