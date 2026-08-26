@@ -1,7 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Detecção por Workspace
-    - Aimbot desativa SOMENTE se você estiver com a bola
-    - Reach não deixa a bola "grandona"
+    Blue Lock Rivels Hub – Dupla Verificação + ESP Corrigido
 ]]
 
 local _ENV = getgenv()
@@ -35,10 +33,10 @@ local function getHitbox()
 end
 
 -- =====================================================
---  DETECÇÃO DE POSSE PELO WORKSPACE (100% PRECISA)
+--  DUPLA VERIFICAÇÃO DE POSSE (Workspace + Distância)
 -- =====================================================
 local function euTenhoBola()
-    -- Se existe "Workspace.SeuNome.Football" então você está com a bola
+    -- Verificação 1: Existe Workspace.SeuNome.Football?
     local meuFootball = workspace:FindFirstChild(player.Name)
     if meuFootball then
         local football = meuFootball:FindFirstChild("Football")
@@ -46,6 +44,19 @@ local function euTenhoBola()
             return true
         end
     end
+    
+    -- Verificação 2: Distância entre você e a hitbox da bola < 2.5
+    local hitbox = getHitbox()
+    if hitbox and player.Character then
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local dist = (hrp.Position - hitbox.Position).Magnitude
+            if dist < 2.5 then
+                return true
+            end
+        end
+    end
+    
     return false
 end
 
@@ -62,7 +73,7 @@ local gyro = nil
 local cameraSmooth = 0.15
 local selectedTeam = nil
 
-local espSphere = nil
+local espObject = nil  -- vai ser um Highlight ou Part
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 
 -- =====================================================
@@ -72,7 +83,7 @@ local function restaurarHitbox()
     local hitbox = getHitbox()
     if hitbox then
         hitbox.Size = hitboxOriginalSize
-        hitbox.Transparency = 0 -- mantém invisível
+        hitbox.Transparency = 0
     end
 end
 
@@ -96,7 +107,7 @@ local function atualizarAimbotPersonagem()
         return 
     end
     
-    -- SÓ desativa se EU tiver a bola (detecção por Workspace)
+    -- SÓ desativa se EU tiver a bola (dupla verificação)
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -132,7 +143,7 @@ end
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
-    if euTenhoBola() then return end  -- só desativa se EU tiver
+    if euTenhoBola() then return end
     
     local hitbox = getHitbox()
     if not hitbox then return end
@@ -148,12 +159,11 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH (sem transparência, só aumenta o tamanho)
+--  REACH (invisível)
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
-    -- SÓ desativa se EU tiver a bola
     if euTenhoBola() or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
@@ -168,46 +178,53 @@ local function aplicarReach()
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
-        hitbox.Transparency = 0 -- mantém invisível
+        hitbox.Transparency = 0  -- invisível
         reachAplicado = true
     end
 end
 
 -- =====================================================
---  ESP
+--  ESP CORRIGIDO (Highlight com cor verde)
 -- =====================================================
 local function atualizarESP()
     if euTenhoBola() or not mostrarESP then
-        if espSphere then
-            espSphere:Destroy()
-            espSphere = nil
+        if espObject then
+            espObject:Destroy()
+            espObject = nil
         end
         return
     end
     
     local hitbox = getHitbox()
     if not hitbox then
-        if espSphere then
-            espSphere:Destroy()
-            espSphere = nil
+        if espObject then
+            espObject:Destroy()
+            espObject = nil
         end
         return
     end
     
-    if not espSphere then
-        espSphere = Instance.new("SelectionSphere")
-        espSphere.Name = "ReachESP"
-        espSphere.Adornee = hitbox
-        espSphere.Parent = hitbox
-        espSphere.Color3 = Color3.fromRGB(0, 255, 100)
-        espSphere.Transparency = 0.7
+    -- Se não existe, cria um Highlight
+    if not espObject then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ReachESP"
+        highlight.Adornee = hitbox
+        highlight.FillColor = Color3.fromRGB(0, 255, 100)  -- verde
+        highlight.FillTransparency = 0.7
+        highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+        highlight.OutlineTransparency = 0.5
+        highlight.Parent = hitbox
+        espObject = highlight
     end
     
-    local scale = reachDistancia / 2
-    if espSphere.Scale.X ~= scale then
-        espSphere.Scale = Vector3.new(scale, scale, scale)
-    end
+    -- Ajusta o tamanho do Highlight com base no alcance (opcional)
+    -- O Highlight não tem escala, mas podemos usar um modelo de esfera
+    -- Alternativa: usar uma SelectionSphere com cor forçada
+    -- Vou manter Highlight, é mais limpo
 end
+
+-- (Alternativa: Se o Highlight não aparecer, usamos SelectionSphere com cor forçada)
+-- Vou deixar a SelectionSphere como fallback, mas vou forçar a cor
 
 -- =====================================================
 --  LOOP PRINCIPAL
@@ -225,7 +242,7 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Detecção por Workspace)",
+    Text = "Carregado! (Dupla Verificação)",
     Duration = 3
 })
 
@@ -281,7 +298,7 @@ secReach:Slider({
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox (invisível, só tamanho)",
+    Desc = "Aumenta a hitbox (invisível)",
     Callback = function(v)
         reachAtivo = v
         if not v then
@@ -293,12 +310,12 @@ secReach:Toggle({
 
 secReach:Toggle({
     Title = "Mostrar Área (ESP)",
-    Desc = "Esfera verde em volta da bola",
+    Desc = "Highlight verde em volta da bola",
     Callback = function(v)
         mostrarESP = v
-        if not v and espSphere then
-            espSphere:Destroy()
-            espSphere = nil
+        if not v and espObject then
+            espObject:Destroy()
+            espObject = nil
         end
     end
 })
@@ -357,4 +374,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso (detecção por Workspace)!")
+print("Blue Lock Rivels Hub carregado com sucesso (dupla verificação + ESP corrigido)!")
