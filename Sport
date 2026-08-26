@@ -1,8 +1,7 @@
 --[[
     Blue Lock Rivels Hub – Corrigido
-    - Aimbot funciona mesmo quando OUTRO jogador pega a bola
-    - Busca hitbox em toda a hierarquia
-    - Posse confiável via HasBall
+    - Aimbot só desativa quando VOCÊ tem a bola
+    - Hitbox restaurada corretamente
 ]]
 
 local _ENV = getgenv()
@@ -11,65 +10,32 @@ local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 
 -- =====================================================
---  DETECÇÃO DA BOLA (busca em toda a hierarquia)
+--  DETECÇÃO DA BOLA
 -- =====================================================
-local function getHitbox()
-    -- Procura por qualquer parte chamada "Hitbox" que seja filha de algo com "ball" no nome
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name == "Hitbox" then
-            local parent = obj.Parent
-            if parent and (parent.Name:lower():match("ball") or parent:IsA("Model") and parent.Name:lower():match("ball")) then
-                return obj
-            end
-        end
-    end
-    
-    -- Fallback: procura por qualquer parte com "ball" no nome e que tenha um filho "Hitbox"
+local function getBall()
+    local football = workspace:FindFirstChild("Football")
+    if football then return football end
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
-            local hitbox = obj:FindFirstChild("Hitbox")
-            if hitbox and hitbox:IsA("BasePart") then
-                return hitbox
-            end
-            -- Se não tiver filho, usa a própria parte
             return obj
         end
     end
     return nil
 end
 
--- =====================================================
---  POSSE (usa APENAS HasBall, sem fallback)
--- =====================================================
-local hasBallCache = false
-local hasBallValue = nil
-
-local function atualizarPosse()
-    local model = workspace:FindFirstChild(player.Name)
-    if model then
-        local values = model:FindFirstChild("Values")
-        if values then
-            local hb = values:FindFirstChild("HasBall")
-            if hb and hb:IsA("BoolValue") then
-                if hasBallValue ~= hb then
-                    hasBallValue = hb
-                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
-                        hasBallCache = hasBallValue.Value
-                    end)
-                end
-                hasBallCache = hb.Value
-                return
-            end
-        end
+local function getHitbox()
+    local ball = getBall()
+    if ball then
+        if ball.Name == "Hitbox" then return ball end
+        local hitbox = ball:FindFirstChild("Hitbox")
+        if hitbox and hitbox:IsA("BasePart") then return hitbox end
+        return ball
     end
-    -- Se não encontrar HasBall, assume que não tem a bola
-    hasBallCache = false
+    return nil
 end
 
-atualizarPosse()
-
 -- =====================================================
---  VARIÁVEIS
+--  VARIÁVEIS DE CONTROLE
 -- =====================================================
 local aimbotPersonagem = false
 local aimbotCamera = false
@@ -84,7 +50,80 @@ local selectedTeam = nil
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
-local reachAplicado = false
+
+-- =====================================================
+--  DETECÇÃO DE POSSE (CORRIGIDA)
+-- =====================================================
+local euTenhoBola = false
+local outroTemBola = false
+
+local function atualizarPosse()
+    -- Verifica se o jogador atual tem a bola
+    local model = workspace:FindFirstChild(player.Name)
+    if model then
+        local values = model:FindFirstChild("Values")
+        if values then
+            local hb = values:FindFirstChild("HasBall")
+            if hb and hb:IsA("BoolValue") then
+                euTenhoBola = hb.Value
+            end
+        end
+    end
+    
+    -- Se não achou o HasBall, fallback por distância
+    if not euTenhoBola then
+        local hitbox = getHitbox()
+        if hitbox and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                euTenhoBola = (hrp.Position - hitbox.Position).Magnitude < 2.5
+            end
+        end
+    end
+    
+    -- Verifica se outro jogador tem a bola
+    outroTemBola = false
+    for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local otherModel = workspace:FindFirstChild(otherPlayer.Name)
+            if otherModel then
+                local values = otherModel:FindFirstChild("Values")
+                if values then
+                    local hb = values:FindFirstChild("HasBall")
+                    if hb and hb:IsA("BoolValue") and hb.Value then
+                        outroTemBola = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Se não achou HasBall de outros, verifica se a hitbox está perto de outro jogador
+    if not outroTemBola then
+        local hitbox = getHitbox()
+        if hitbox then
+            for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
+                if otherPlayer ~= player then
+                    local char = otherPlayer.Character
+                    if char then
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp and (hrp.Position - hitbox.Position).Magnitude < 3 then
+                            outroTemBola = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+atualizarPosse()
+
+-- Atualiza a posse sempre que mudar
+game.Players.PlayerAdded:Connect(atualizarPosse)
+game.Players.PlayerRemoving:Connect(atualizarPosse)
 
 -- =====================================================
 --  RESTAURA HITBOX
@@ -98,7 +137,7 @@ local function restaurarHitbox()
 end
 
 -- =====================================================
---  AIMBOT PERSONAGEM
+--  AIMBOT PERSONAGEM (só desativa se EU tiver a bola)
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -117,8 +156,8 @@ local function atualizarAimbotPersonagem()
         return 
     end
     
-    -- Só desativa se o jogador LOCAL tiver a bola
-    if hasBallCache then
+    -- Só desativa se EU tiver a bola (não se outro tiver)
+    if euTenhoBola then
         if gyro then
             gyro:Destroy()
             gyro = nil
@@ -149,15 +188,16 @@ local function atualizarAimbotPersonagem()
 end
 
 -- =====================================================
---  AIMBOT CÂMERA
+--  AIMBOT CÂMERA (só desativa se EU tiver a bola)
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
-    if hasBallCache then return end  -- só desativa se local tiver a bola
+    if euTenhoBola then return end
     
     local hitbox = getHitbox()
     if not hitbox then return end
     
+    -- Não força câmera durante chute
     if hitbox.AssemblyLinearVelocity.Magnitude > 50 then
         return
     end
@@ -169,10 +209,13 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH
+--  REACH (desativa só se EU tiver a bola)
 -- =====================================================
+local reachAplicado = false
+
 local function aplicarReach()
-    if hasBallCache or not reachAtivo then
+    -- Só desativa se EU tiver a bola (se outro tiver, continua ativo)
+    if euTenhoBola or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
             reachAplicado = false
@@ -192,10 +235,10 @@ local function aplicarReach()
 end
 
 -- =====================================================
---  ESP
+--  ESP (desativa só se EU tiver a bola)
 -- =====================================================
 local function atualizarESP()
-    if hasBallCache or not mostrarESP then
+    if euTenhoBola or not mostrarESP then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
@@ -231,6 +274,7 @@ end
 --  LOOP PRINCIPAL
 -- =====================================================
 runService.Heartbeat:Connect(function()
+    atualizarPosse() -- atualiza a cada frame para detectar mudanças
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     aplicarReach()
@@ -243,7 +287,7 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Aimbot com outros jogadores fixo)",
+    Text = "Carregado! (Corrigido)",
     Duration = 3
 })
 
@@ -263,7 +307,6 @@ local Window = WindUI:CreateWindow({
     ScrollBarEnabled = false,
 })
 
--- Tab Principal
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 
 -- Seção Aimbot
@@ -271,7 +314,7 @@ local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
     Title = "Aimbot Personagem",
-    Desc = "Seu corpo vira para a bola",
+    Desc = "Seu corpo vira para a bola (só desativa se VOCÊ tiver)",
     Callback = function(v)
         ativarAimbotPersonagem(v)
     end
@@ -279,7 +322,7 @@ secAimbot:Toggle({
 
 secAimbot:Toggle({
     Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola",
+    Desc = "Câmera segue a bola (só desativa se VOCÊ tiver)",
     Callback = function(v)
         aimbotCamera = v
     end
@@ -300,7 +343,7 @@ secReach:Slider({
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox da bola",
+    Desc = "Aumenta a hitbox da bola (só desativa se VOCÊ tiver)",
     Callback = function(v)
         reachAtivo = v
         if not v then
@@ -376,4 +419,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado (corrigido para outros jogadores)!")
+print("Blue Lock Rivels Hub carregado com sucesso (corrigido)!")
