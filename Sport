@@ -1,5 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Com Controle de Bola (Voa na direção da câmera)
+    Blue Lock Rivels Hub – Controle de Bola v2 (voo livre com a câmera)
 ]]
 
 local _ENV = getgenv()
@@ -7,17 +7,6 @@ local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 local userInput = game:GetService("UserInputService")
-local players = game:GetService("Players")
-
--- =====================================================
---  VARIAVEIS DE CONTROLE DO CONTROLE DE BOLA
--- =====================================================
-local controlBallActive = false
-local controlBallButton = nil
-local controlBallGUI = nil  -- para esconder/mostrar
-local isDragging = false
-local dragStart = nil
-local buttonStartPos = nil
 
 -- =====================================================
 --  REFERÊNCIAS DA BOLA (CACHE)
@@ -26,9 +15,6 @@ local bola = nil
 local hitbox = nil
 local bolaValida = false
 
--- =====================================================
---  ATUALIZA REFERÊNCIA DA BOLA (EVENTOS)
--- =====================================================
 local function atualizarReferenciaBola()
     for _, child in ipairs(workspace:GetChildren()) do
         if child:IsA("Model") then
@@ -63,18 +49,16 @@ end
 
 workspace.ChildAdded:Connect(atualizarReferenciaBola)
 workspace.ChildRemoved:Connect(atualizarReferenciaBola)
-
 for _, child in ipairs(workspace:GetChildren()) do
     if child:IsA("Model") then
         child.ChildAdded:Connect(atualizarReferenciaBola)
         child.ChildRemoved:Connect(atualizarReferenciaBola)
     end
 end
-
 atualizarReferenciaBola()
 
 -- =====================================================
---  POSSE – APENAS POR Workspace.SeuNome.Football
+--  POSSE (Workspace)
 -- =====================================================
 local function euTenhoBola()
     local meuModel = workspace:FindFirstChild(player.Name)
@@ -85,25 +69,25 @@ local function euTenhoBola()
 end
 
 -- =====================================================
---  VARIAVEIS DE CONTROLE
+--  VARIÁVEIS DE CONTROLE
 -- =====================================================
 local aimbotPersonagem = false
 local aimbotCamera = false
 local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
-local mostrarBotao = true  -- toggle para mostrar/esconder o botão
+local mostrarBotao = true
+local controlBallActive = false
 
 local gyro = nil
 local cameraSmooth = 0.08
 local selectedTeam = nil
-
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  RESET DA HITBOX (a cada 0.3 segundos)
+--  RESET DA HITBOX (a cada 0.3s)
 -- =====================================================
 task.spawn(function()
     while true do
@@ -123,7 +107,7 @@ task.spawn(function()
 end)
 
 -- =====================================================
---  AIMBOT PERSONAGEM (FORÇA MAXIMA)
+--  AIMBOT PERSONAGEM
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -134,7 +118,6 @@ local function ativarAimbotPersonagem(estado)
 end
 
 local function atualizarAimbotPersonagem()
-    -- Se o Controle de Bola estiver ativo, desativa o aimbot
     if controlBallActive then
         if gyro then
             gyro:Destroy()
@@ -142,7 +125,6 @@ local function atualizarAimbotPersonagem()
         end
         return
     end
-
     if not aimbotPersonagem then
         if gyro then
             gyro:Destroy()
@@ -150,7 +132,6 @@ local function atualizarAimbotPersonagem()
         end
         return
     end
-
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -158,7 +139,6 @@ local function atualizarAimbotPersonagem()
         end
         return
     end
-
     if not bolaValida or not hitbox then
         if gyro then
             gyro:Destroy()
@@ -190,18 +170,12 @@ end
 --  AIMBOT CÂMERA
 -- =====================================================
 local function atualizarAimbotCamera()
-    -- Se o Controle de Bola estiver ativo, a câmera é controlada pelo Controle de Bola
-    if controlBallActive then
-        return
-    end
-
+    if controlBallActive then return end
     if not aimbotCamera then return end
     if euTenhoBola() then return end
     if not bolaValida or not hitbox then return end
 
-    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then
-        return
-    end
+    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then return end
 
     local posBola = hitbox.Position
     local posCamera = camera.CFrame.Position
@@ -210,7 +184,7 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  CONTROLE DE BOLA (voador – direção da câmera)
+--  CONTROLE DE BOLA – VOO LIVRE (APENAS A BOLA)
 -- =====================================================
 local function controlarBola()
     if not controlBallActive then return end
@@ -221,40 +195,42 @@ local function controlarBola()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    -- Distância entre jogador e bola
+    -- Se a bola estiver muito longe, puxa para perto
     local dist = (hrp.Position - hitbox.Position).Magnitude
-
-    -- Se a bola estiver longe, puxa para perto (usando o reach)
-    if dist > reachDistancia then
+    if dist > reachDistancia * 1.5 then
         local direcao = (hrp.Position - hitbox.Position).Unit
         hitbox.CFrame = CFrame.new(hrp.Position - direcao * 3)
         return
     end
 
-    -- Calcula a posição alvo: ponto na direção da câmera a uma distância fixa
-    local cameraDirecao = camera.CFrame.LookVector
-    local cameraPos = camera.CFrame.Position
+    -- Direção da câmera (para onde o jogador está olhando)
+    local camLook = camera.CFrame.LookVector
+    local camPos = camera.CFrame.Position
 
-    -- A bola ficará a 5 unidades na direção da câmera a partir da posição do jogador
+    -- A bola será posicionada na direção do olhar, a uma distância fixa do jogador
     local distanciaBola = 5
-    local posAlvo = hrp.Position + cameraDirecao * distanciaBola
-    -- Mantém a bola na altura do peito
-    posAlvo = Vector3.new(posAlvo.X, hrp.Position.Y + 1.5, posAlvo.Z)
+    local posAlvo = hrp.Position + camLook * distanciaBola
+
+    -- Ajusta a altura da bola com base no olhar da câmera (para cima/baixo)
+    -- Calcula o ângulo vertical da câmera
+    local verticalAngle = math.asin(math.clamp(camLook.Y, -1, 1))
+    -- A altura da bola varia entre -2 e +4 em relação ao peito do jogador
+    local alturaOffset = math.sin(verticalAngle) * 4
+    posAlvo = Vector3.new(posAlvo.X, hrp.Position.Y + 1.5 + alturaOffset, posAlvo.Z)
 
     -- Move a bola suavemente para a posição alvo
     hitbox.CFrame = CFrame.new(posAlvo)
 
-    -- A câmera fica atrás da bola (como se estivesse controlando a bola)
-    local cameraOffset = cameraDirecao * -8 + Vector3.new(0, 3, 0)
-    local novaPosCamera = posAlvo + cameraOffset
-    camera.CFrame = CFrame.new(novaPosCamera, posAlvo)
+    -- Posiciona a câmera atrás da bola (para ver a bola e o campo)
+    local camOffset = -camLook * 8 + Vector3.new(0, 3, 0)
+    local novaPosCam = posAlvo + camOffset
+    camera.CFrame = CFrame.new(novaPosCam, posAlvo)
 end
 
 -- =====================================================
 --  REACH
 -- =====================================================
 local reachAplicado = false
-
 local function aplicarReach()
     if euTenhoBola() or not reachAtivo then
         if reachAplicado then
@@ -268,7 +244,6 @@ local function aplicarReach()
     end
 
     if not hitbox then return end
-
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
@@ -312,15 +287,17 @@ runService.Heartbeat:Connect(function()
     atualizarAimbotCamera()
     aplicarReach()
     atualizarESP()
-
     if controlBallActive then
         controlarBola()
     end
 end)
 
 -- =====================================================
---  BOTÃO FLUTUANTE (CONTROLE DE BOLA)
+--  BOTÃO FLUTUANTE
 -- =====================================================
+local controlBallGUI = nil
+local controlBallButton = nil
+
 local function criarBotaoFlutuante()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ControlBallGUI"
@@ -332,9 +309,9 @@ local function criarBotaoFlutuante()
     button.Name = "ControlBallButton"
     button.Size = UDim2.new(0, 120, 0, 40)
     button.Position = UDim2.new(0.85, 0, 0.5, 0)
-    button.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho (desligado)
+    button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
     button.BackgroundTransparency = 0.2
-    button.Text = "Control Ball v1"
+    button.Text = "Control Ball v2"
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
     button.TextSize = 14
     button.Font = Enum.Font.GothamBold
@@ -359,10 +336,10 @@ local function criarBotaoFlutuante()
     local function atualizarCorBotao(ativo)
         if ativo then
             button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            button.Text = "Control Ball v1 ✅"
+            button.Text = "Control Ball v2 ✅"
         else
             button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-            button.Text = "Control Ball v1 ❌"
+            button.Text = "Control Ball v2 ❌"
         end
     end
 
@@ -385,7 +362,7 @@ local function criarBotaoFlutuante()
         end
     end)
 
-    -- Sistema de arrastar
+    -- Arrastar
     local dragging = false
     local dragStartPos = nil
     local buttonStartPos = nil
@@ -435,7 +412,7 @@ criarBotaoFlutuante()
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification", {
     Title = "Blue Lock Rivels",
-    Text = "Carregado! Botão flutuante + Toggle para esconder.",
+    Text = "Carregado! Controle de Bola v2 (voo livre)",
     Duration = 4
 })
 
@@ -517,7 +494,7 @@ local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
 secExtras:Toggle({
     Title = "Mostrar Botão Flutuante",
-    Desc = "Exibe ou oculta o botão 'Control Ball v1' na tela",
+    Desc = "Exibe ou oculta o botão 'Control Ball v2' na tela",
     Default = true,
     Callback = function(v)
         mostrarBotao = v
@@ -578,4 +555,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub – Atualizado com Controle de Bola voador e toggle do botão!")
+print("Blue Lock Rivels Hub – Controle de Bola v2 carregado!")
