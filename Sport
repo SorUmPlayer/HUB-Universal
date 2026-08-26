@@ -1,5 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Com Controle de Bola
+    Blue Lock Rivels Hub – Com Controle de Bola (corrigido)
 ]]
 
 local _ENV = getgenv()
@@ -98,12 +98,21 @@ local hitboxOriginalTransparency = 0
 -- =====================================================
 local controlButtonActive = false
 local controlConnection = nil
-local bolaSpeed = 65  -- velocidade padrão
+local bolaSpeed = 65
 local screenGui = nil
 local toggleButton = nil
+local isControlActive = false
+
+-- Função para encontrar a bola (usa o cache)
+local function getBallForControl()
+    if bola and bolaValida then
+        return bola
+    end
+    return nil
+end
 
 -- =====================================================
---  RESET DA HITBOX (a cada 0.3 segundos)
+--  RESET DA HITBOX
 -- =====================================================
 task.spawn(function()
     while true do
@@ -230,10 +239,12 @@ runService.Heartbeat:Connect(function()
 end)
 
 -- =====================================================
---  CONTROLE DE BOLA – BOTÃO FLUTUANTE
+--  CONTROLE DE BOLA – BOTÃO FLUTUANTE (CORRIGIDO)
 -- =====================================================
 local function criarBotaoFlutuante()
-    -- Cria a GUI
+    -- Se já existir, não cria outro
+    if screenGui then return end
+
     screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ControlBallGui"
     screenGui.ResetOnSpawn = false
@@ -261,31 +272,31 @@ local function criarBotaoFlutuante()
     uiCorner.CornerRadius = UDim.new(0, 8)
     uiCorner.Parent = toggleButton
 
-    -- Função para encontrar a bola (compatível com o resto do script)
-    local function getBallForControl()
-        if bola and bolaValida then
-            return bola
-        end
-        return nil
-    end
-
     -- Lógica do botão
-    local isActive = false
+    isControlActive = false
 
     local function toggleControl()
-        isActive = not isActive
+        isControlActive = not isControlActive
 
-        if isActive then
+        if isControlActive then
             toggleButton.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
             toggleButton.Text = "Control BALL [ON]"
 
+            if controlConnection then
+                controlConnection:Disconnect()
+            end
+
             controlConnection = RunService.Heartbeat:Connect(function()
                 local ball = getBallForControl()
-                if ball then
+                if ball and bolaValida then
+                    -- Força a câmera para a bola
                     camera.CameraSubject = ball
+
+                    -- Move a bola na direção da câmera
                     local lookVector = camera.CFrame.LookVector
                     ball.AssemblyLinearVelocity = lookVector * bolaSpeed
                 else
+                    -- Se a bola sumir, volta a câmera para o jogador
                     if player.Character and player.Character:FindFirstChild("Humanoid") then
                         camera.CameraSubject = player.Character.Humanoid
                     end
@@ -300,6 +311,7 @@ local function criarBotaoFlutuante()
                 controlConnection = nil
             end
 
+            -- Restaura a câmera para o personagem
             if player.Character and player.Character:FindFirstChild("Humanoid") then
                 camera.CameraSubject = player.Character.Humanoid
             end
@@ -319,6 +331,7 @@ local function destruirBotaoFlutuante()
         controlConnection:Disconnect()
         controlConnection = nil
     end
+    isControlActive = false
 end
 
 -- =====================================================
@@ -334,7 +347,6 @@ local function escravaVelocidade(args)
     end
 end
 
--- Detecta mensagens no chat (simples)
 local function configurarChatCommand()
     local function onChatMessage(msg)
         if msg:lower():match("^escrava velocidade da bola") then
@@ -345,7 +357,6 @@ local function configurarChatCommand()
         end
     end
 
-    -- Para Roblox normal
     local chatService = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
     if chatService then
         local onMessage = chatService:FindFirstChild("OnMessage")
@@ -353,7 +364,6 @@ local function configurarChatCommand()
             onMessage.OnClientEvent:Connect(onChatMessage)
         end
     else
-        -- Fallback: escuta o chat local
         game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
             Text = "Digite 'Escrava velocidade da bola [número]' no chat!"
         })
@@ -363,12 +373,12 @@ end
 configurarChatCommand()
 
 -- =====================================================
---  UI – WindUI (com categoria Controle de Bola)
+--  UI – WindUI
 -- =====================================================
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Com Controle de Bola!",
+    Text = "Com Controle de Bola corrigido!",
     Duration = 4
 })
 
@@ -388,7 +398,6 @@ local Window = WindUI:CreateWindow({
     ScrollBarEnabled = false,
 })
 
--- Tab Principal
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 
 -- =====================================================
@@ -549,4 +558,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub – Com Controle de Bola carregado!")
+print("Blue Lock Rivels Hub – Com Controle de Bola corrigido carregado!")
