@@ -1,9 +1,9 @@
 --[[
-    Blue Lock Rivels Hub – Versão Ultra Robusta
-    - Corrigido travamento de inicialização (_ENV removido)
-    - Proteção pcall para CoreGui / PlayerGui
+    Blue Lock Rivels Hub – Tudo na Mesma Aba
+    - Seção Controle de Bola integrada à aba principal
     - Busca exata de Workspace.Football.BallAnims
-    - Botão Flutuante (ON/OFF) funcional
+    - Botão Flutuante (ON/OFF) funcional e arrastável
+    - Proteção para executores (SafeParent + Sem erro de _ENV)
 ]]
 
 local Players = game:GetService("Players")
@@ -305,7 +305,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- =====================================================
---  INTERFACE WINDUI (CARREGAMENTO SEGURO)
+--  INTERFACE WINDUI (UMA ÚNICA ABA)
 -- =====================================================
 local WindUI
 local loaded, _ = pcall(function()
@@ -321,7 +321,7 @@ local Window = WindUI:CreateWindow({
     Icon = "rbxassetid://10723343321",
     Author = "Sor_Gostoso",
     Folder = "BlueLockHub",
-    Size = UDim2.fromOffset(480, 400),
+    Size = UDim2.fromOffset(480, 420),
     Transparent = true,
     Theme = "Dark",
     Resizable = true,
@@ -330,10 +330,38 @@ local Window = WindUI:CreateWindow({
     ScrollBarEnabled = false,
 })
 
+-- Aba Única
 local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
-local BallTab = Window:Tab({ Title = "Controle de Bola", Icon = "circle-dot" })
 
--- Aba Principal
+-- Seção Controle de Bola (Dentro da Aba Única)
+local secControleBola = MainTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
+
+secControleBola:Input({
+    Title = "Velocidade da Bola",
+    Desc = "Escreva velocidade da bola",
+    Value = "65",
+    Placeholder = "Digite a velocidade...",
+    Callback = function(txt)
+        local val = tonumber(txt)
+        if val then
+            velocidadeBola = val
+        end
+    end
+})
+
+secControleBola:Toggle({
+    Title = "Botão Flutuante",
+    Desc = "Abre o botão arrastável na tela (ON/OFF)",
+    Callback = function(v)
+        if v then
+            criarBotaoFlutuante()
+        else
+            removerBotaoFlutuante()
+        end
+    end
+})
+
+-- Seção Aimbot
 local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
@@ -352,6 +380,7 @@ secAimbot:Toggle({
     end
 })
 
+-- Seção Reach
 local secReach = MainTab:Section({ Title = "Reach (Magnet)", TextXAlignment = "Left" })
 
 secReach:Slider({
@@ -387,35 +416,7 @@ secReach:Toggle({
     end
 })
 
--- Aba Controle de Bola
-local secControleBola = BallTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
-
-secControleBola:Input({
-    Title = "Velocidade da Bola",
-    Desc = "Escreva velocidade da bola",
-    Value = "65",
-    Placeholder = "Digite a velocidade...",
-    Callback = function(txt)
-        local val = tonumber(txt)
-        if val then
-            velocidadeBola = val
-        end
-    end
-})
-
-secControleBola:Toggle({
-    Title = "Botão Flutuante",
-    Desc = "Abre o botão arrastável na tela (ON/OFF)",
-    Callback = function(v)
-        if v then
-            criarBotaoFlutuante()
-        else
-            removerBotaoFlutuante()
-        end
-    end
-})
-
--- Extras
+-- Seção Extras
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
 secExtras:Button({
