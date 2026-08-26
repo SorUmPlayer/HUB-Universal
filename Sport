@@ -1,15 +1,12 @@
 --[[
-    Blue Lock Rivels Hub – Definitivo
-    - Reset da hitbox a cada 0.3s (evita bola gigante)
-    - Aimbot só desativa se VOCÊ estiver com a bola (verificação exclusiva por Workspace)
-    - Força do BodyGyro aumentada
-    - Câmera mais rápida
+    Blue Lock Rivels Hub – Com Controle de Bola
 ]]
 
 local _ENV = getgenv()
 local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
+local userInput = game:GetService("UserInputService")
 
 -- =====================================================
 --  REFERÊNCIAS DA BOLA (CACHE)
@@ -18,14 +15,9 @@ local bola = nil
 local hitbox = nil
 local bolaValida = false
 
--- =====================================================
---  ATUALIZA REFERÊNCIA DA BOLA (EVENTOS)
--- =====================================================
 local function atualizarReferenciaBola()
-    -- Procura bola solta ou em posse de alguém
     for _, child in ipairs(workspace:GetChildren()) do
         if child:IsA("Model") then
-            -- Se for um jogador, verifica se tem Football
             local football = child:FindFirstChild("Football")
             if football then
                 bola = football
@@ -39,44 +31,36 @@ local function atualizarReferenciaBola()
                 return
             end
         elseif child.Name == "Football" then
-            -- Bola solta
             bola = child
-            local hb = bola:FindFirstChild("Hitbox")
+            local hb = child:FindFirstChild("Hitbox")
             if hb and hb:IsA("BasePart") then
                 hitbox = hb
             else
-                hitbox = bola
+                hitbox = child
             end
             bolaValida = true
             return
         end
     end
-    -- Se não achou, invalida
     bola = nil
     hitbox = nil
     bolaValida = false
 end
 
--- Eventos para capturar mudanças
 workspace.ChildAdded:Connect(atualizarReferenciaBola)
 workspace.ChildRemoved:Connect(atualizarReferenciaBola)
-
--- Também escuta modelos (jogadores)
 for _, child in ipairs(workspace:GetChildren()) do
     if child:IsA("Model") then
         child.ChildAdded:Connect(atualizarReferenciaBola)
         child.ChildRemoved:Connect(atualizarReferenciaBola)
     end
 end
-
--- Inicializa
 atualizarReferenciaBola()
 
 -- =====================================================
---  POSSE – APENAS POR Workspace.SeuNome.Football
+--  POSSE (exclusiva por Workspace)
 -- =====================================================
 local function euTenhoBola()
-    -- Verifica se o modelo do jogador tem um filho "Football"
     local meuModel = workspace:FindFirstChild(player.Name)
     if meuModel and meuModel:FindFirstChild("Football") then
         return true
@@ -93,8 +77,15 @@ local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
 
+-- Controle de Bola
+local controlBallActive = false
+local ballSpeed = 20
+local controlBallBodyVelocity = nil
+local aimbotPersonagemAntes = false
+local aimbotCameraAntes = false
+
 local gyro = nil
-local cameraSmooth = 0.08  -- mais rápido
+local cameraSmooth = 0.08
 local selectedTeam = nil
 
 local espSphere = nil
@@ -102,20 +93,18 @@ local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  RESET DA HITBOX (a cada 0.3 segundos)
+--  RESET DA HITBOX
 -- =====================================================
 task.spawn(function()
     while true do
-        task.wait(0.3)  -- a cada 0.3 segundos
+        task.wait(0.3)
         if hitbox then
-            -- Se o reach estiver desativado OU se eu tiver a bola, restaura
             if not reachAtivo or euTenhoBola() then
                 if hitbox.Size ~= hitboxOriginalSize or hitbox.Transparency ~= hitboxOriginalTransparency then
                     hitbox.Size = hitboxOriginalSize
                     hitbox.Transparency = hitboxOriginalTransparency
                 end
             else
-                -- Se reach ativo, mantém grande (invisível)
                 hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
                 hitbox.Transparency = 1
             end
@@ -124,7 +113,7 @@ task.spawn(function()
 end)
 
 -- =====================================================
---  AIMBOT PERSONAGEM (Força máxima)
+--  AIMBOT PERSONAGEM
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -135,6 +124,14 @@ local function ativarAimbotPersonagem(estado)
 end
 
 local function atualizarAimbotPersonagem()
+    if controlBallActive then
+        if gyro then
+            gyro:Destroy()
+            gyro = nil
+        end
+        return
+    end
+
     if not aimbotPersonagem then
         if gyro then
             gyro:Destroy()
@@ -143,7 +140,6 @@ local function atualizarAimbotPersonagem()
         return
     end
 
-    -- SÓ desativa se EU tiver a bola (verificação exclusiva)
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -168,8 +164,8 @@ local function atualizarAimbotPersonagem()
     if not gyro then
         gyro = Instance.new("BodyGyro")
         gyro.Parent = hrp
-        gyro.D = 1000      -- mais forte
-        gyro.P = 10000     -- mais forte
+        gyro.D = 1000
+        gyro.P = 10000
         gyro.MaxTorque = Vector3.new(8000, 8000, 8000)
     end
 
@@ -180,14 +176,14 @@ local function atualizarAimbotPersonagem()
 end
 
 -- =====================================================
---  AIMBOT CÂMERA (mais rápida)
+--  AIMBOT CÂMERA
 -- =====================================================
 local function atualizarAimbotCamera()
+    if controlBallActive then return end
     if not aimbotCamera then return end
     if euTenhoBola() then return end
     if not bolaValida or not hitbox then return end
 
-    -- Ignora chutes fortes (acima de 80)
     if hitbox.AssemblyLinearVelocity.Magnitude > 80 then
         return
     end
@@ -197,6 +193,67 @@ local function atualizarAimbotCamera()
     local novaPos = posCamera:Lerp(posBola, cameraSmooth)
     camera.CFrame = CFrame.new(novaPos, posBola)
 end
+
+-- =====================================================
+--  CONTROLE DE BOLA
+-- =====================================================
+local function toggleControlBall()
+    controlBallActive = not controlBallActive
+
+    if controlBallActive then
+        -- Salva estados atuais dos aimbots
+        aimbotPersonagemAntes = aimbotPersonagem
+        aimbotCameraAntes = aimbotCamera
+
+        -- Desativa aimbots
+        if aimbotPersonagem then ativarAimbotPersonagem(false) end
+        if aimbotCamera then aimbotCamera = false end
+
+        -- Cria BodyVelocity na bola
+        if hitbox then
+            controlBallBodyVelocity = Instance.new("BodyVelocity")
+            controlBallBodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+            controlBallBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            controlBallBodyVelocity.Parent = hitbox
+        end
+    else
+        -- Remove BodyVelocity
+        if controlBallBodyVelocity then
+            controlBallBodyVelocity:Destroy()
+            controlBallBodyVelocity = nil
+        end
+
+        -- Restaura aimbots (se estavam ativos antes)
+        if aimbotPersonagemAntes then
+            ativarAimbotPersonagem(true)
+            aimbotPersonagemAntes = false
+        end
+        if aimbotCameraAntes then
+            aimbotCamera = true
+            aimbotCameraAntes = false
+        end
+    end
+end
+
+-- Loop do controle de bola (executa a cada frame)
+runService.Heartbeat:Connect(function()
+    if not controlBallActive then return end
+    if not hitbox then return end
+
+    -- 1) Atualiza velocidade da bola baseado na direção da câmera
+    local cameraDirection = camera.CFrame.LookVector
+    local velocidade = cameraDirection * ballSpeed
+
+    if controlBallBodyVelocity then
+        controlBallBodyVelocity.Velocity = velocidade
+    end
+
+    -- 2) Mantém a câmera focada na bola (terceira pessoa)
+    local posBola = hitbox.Position
+    local offset = camera.CFrame.RightVector * -8 + Vector3.new(0, 4, 0)  -- atrás e acima
+    local novaPosCam = posBola + offset
+    camera.CFrame = CFrame.new(novaPosCam, posBola)
+end)
 
 -- =====================================================
 --  ESP (verde)
@@ -224,7 +281,7 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  LOOP PRINCIPAL (fps otimizado)
+--  LOOP PRINCIPAL
 -- =====================================================
 runService.Heartbeat:Connect(function()
     atualizarAimbotPersonagem()
@@ -238,8 +295,8 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Definitivo – Bola resetada + Aimbot grudado!",
-    Duration = 4
+    Text = "Controle de Bola adicionado!",
+    Duration = 3
 })
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -249,7 +306,7 @@ local Window = WindUI:CreateWindow({
     Icon = "rbxassetid://10723343321",
     Author = "Sor_Gostoso",
     Folder = "BlueLockHub",
-    Size = UDim2.fromOffset(480, 400),
+    Size = UDim2.fromOffset(480, 450),
     Transparent = true,
     Theme = "Dark",
     Resizable = true,
@@ -315,8 +372,32 @@ secReach:Toggle({
     end
 })
 
--- Seção Extras
+-- Seção Extras (com Controle de Bola)
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
+
+-- Botão Controle de Bola (com estado visual)
+local controlBallBtn
+controlBallBtn = secExtras:Button({
+    Title = "🔴 Control Ball v1 (OFF)",
+    Desc = "Ative para controlar a bola com a câmera",
+    Callback = function()
+        toggleControlBall()
+        -- Atualiza o título do botão
+        local novoTexto = controlBallActive and "🟢 Control Ball v1 (ON)" or "🔴 Control Ball v1 (OFF)"
+        controlBallBtn:SetTitle(novoTexto)
+    end
+})
+
+-- Slider Velocidade da Bola
+secExtras:Slider({
+    Title = "Velocidade da Bola",
+    Desc = "Velocidade do movimento (padrão 20)",
+    Step = 1,
+    Value = { Min = 1, Max = 50, Default = 20 },
+    Callback = function(v)
+        ballSpeed = v
+    end
+})
 
 secExtras:Button({
     Title = "Infinite Stamina",
@@ -369,4 +450,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub – Definitivo carregado!")
+print("Blue Lock Rivels Hub – Com Controle de Bola carregado!")
