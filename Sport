@@ -1,8 +1,8 @@
 --[[
     Blue Lock Rivels Hub – Com Controle de Bola
     - Botão flutuante "Control Ball v1" (Vermelho/Verde)
-    - Desativa aimbot automático quando ativado
-    - Controla a bola com a câmera
+    - Controla a direção da bola com a câmera
+    - Desativa aimbot quando ativo
     - Slider de velocidade da bola
 ]]
 
@@ -11,7 +11,6 @@ local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 local userInputService = game:GetService("UserInputService")
-local players = game:GetService("Players")
 
 -- =====================================================
 --  REFERÊNCIAS DA BOLA (CACHE)
@@ -20,9 +19,6 @@ local bola = nil
 local hitbox = nil
 local bolaValida = false
 
--- =====================================================
---  ATUALIZA REFERÊNCIA DA BOLA (EVENTOS)
--- =====================================================
 local function atualizarReferenciaBola()
     for _, child in ipairs(workspace:GetChildren()) do
         if child:IsA("Model") then
@@ -66,7 +62,7 @@ end
 atualizarReferenciaBola()
 
 -- =====================================================
---  POSSE – APENAS POR Workspace.SeuNome.Football
+--  POSSE (APENAS POR Workspace.SeuNome.Football)
 -- =====================================================
 local function euTenhoBola()
     local meuModel = workspace:FindFirstChild(player.Name)
@@ -85,6 +81,11 @@ local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
 
+-- Controle de Bola
+local controlBallAtivo = false
+local velocidadeBola = 20
+local bolaControlavel = false
+
 local gyro = nil
 local cameraSmooth = 0.08
 local selectedTeam = nil
@@ -94,19 +95,7 @@ local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  NOVAS VARIÁVEIS – CONTROLE DE BOLA
--- =====================================================
-local controleBolaAtivo = false
-local velocidadeBola = 20
-local bolaControlavel = false
-local botaoFlutuante = nil
-local botaoDraggable = nil
-local dragging = false
-local dragStart = nil
-local dragStartPos = nil
-
--- =====================================================
---  RESET DA HITBOX
+--  RESET DA HITBOX (a cada 0.3 segundos)
 -- =====================================================
 task.spawn(function()
     while true do
@@ -138,7 +127,7 @@ end
 
 local function atualizarAimbotPersonagem()
     -- Se o Controle de Bola estiver ativo, NÃO executa aimbot
-    if controleBolaAtivo then
+    if controlBallAtivo then
         if gyro then
             gyro:Destroy()
             gyro = nil
@@ -193,8 +182,8 @@ end
 --  AIMBOT CÂMERA
 -- =====================================================
 local function atualizarAimbotCamera()
-    -- Se o Controle de Bola estiver ativo, NÃO executa aimbot da câmera
-    if controleBolaAtivo then
+    -- Se Controle de Bola estiver ativo, a câmera é controlada pelo controle de bola
+    if controlBallAtivo then
         return
     end
 
@@ -213,41 +202,152 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  CONTROLE DE BOLA – LÓGICA PRINCIPAL
+--  CONTROLE DE BOLA
 -- =====================================================
 local function controlarBola()
-    if not controleBolaAtivo then
-        -- Se desativado, volta a câmera para o personagem
-        if player.Character then
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 5, 0), hrp.Position)
-            end
-        end
-        return
-    end
-
+    if not controlBallAtivo then return end
     if not bolaValida or not hitbox then return end
 
-    -- Verifica se o jogador está com a bola (posse)
-    local tenhoBola = euTenhoBola()
+    -- Verifica se a bola está no pé do jogador (para controle)
+    if euTenhoBola() then
+        bolaControlavel = true
+    else
+        -- Se a bola estiver solta, tenta puxar
+        bolaControlavel = false
+    end
 
-    if tenhoBola then
-        -- Se está com a bola, controla ela com a câmera
-        local cameraLookVector = camera.CFrame.LookVector
-        local cameraPosition = camera.CFrame.Position
+    -- Se a bola estiver controlável, move com a câmera
+    if bolaControlavel then
+        -- A câmera segue a bola
+        local posBola = hitbox.Position
+        local posCamera = camera.CFrame.Position
+        local novaPos = posCamera:Lerp(posBola, 0.1)
+        camera.CFrame = CFrame.new(novaPos, posBola)
 
-        -- Direção que a câmera está olhando (plano XZ)
-        local dirXZ = Vector3.new(cameraLookVector.X, 0, cameraLookVector.Z).Unit
+        -- Controla a direção da bola com a câmera
+        -- A bola segue a direção que a câmera está olhando
+        local direcaoCamera = camera.CFrame.LookVector
+        local forca = velocidadeBola * 1.5
 
-        -- Aplica velocidade na direção da câmera
-        local forca = velocidadeBola * 0.5 -- ajuste fino
-        hitbox.Velocity = Vector3.new(dirXZ.X * forca, 0, dirXZ.Z * forca)
-
-        -- Faz a bola "flutuar" na frente da câmera (opcional)
-        -- hitbox.Position = cameraPosition + cameraLookVector * 5
+        -- Aplica força na bola na direção da câmera (se estiver no pé)
+        if euTenhoBola() then
+            -- Aplica impulso na bola
+            hitbox:ApplyImpulse(direcaoCamera * forca)
+        end
+    else
+        -- Se a bola não estiver no pé, tenta atrair
+        local char = player.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (hrp.Position - hitbox.Position).Magnitude
+                if dist < 30 then
+                    -- Puxa a bola lentamente
+                    local direcao = (hrp.Position - hitbox.Position).Unit
+                    hitbox:ApplyImpulse(direcao * 2)
+                end
+            end
+        end
     end
 end
+
+-- =====================================================
+--  BOTÃO FLUTUANTE
+-- =====================================================
+local function criarBotaoFlutuante()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ControlBallGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+
+    local button = Instance.new("TextButton")
+    button.Name = "ControlBallButton"
+    button.Parent = screenGui
+    button.Size = UDim2.new(0, 160, 0, 45)
+    button.Position = UDim2.new(0.02, 0, 0.5, -22) -- canto esquerdo
+    button.BackgroundColor3 = Color3.fromRGB(200, 0, 0) -- Vermelho (desligado)
+    button.BackgroundTransparency = 0.2
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextScaled = true
+    button.Text = "Control Ball v1"
+    button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 2
+    button.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    button.Active = true
+    button.Draggable = true -- Permite arrastar
+
+    -- Efeito de hover
+    button.MouseEnter:Connect(function()
+        button.BackgroundTransparency = 0.1
+    end)
+    button.MouseLeave:Connect(function()
+        button.BackgroundTransparency = 0.2
+    end)
+
+    -- Clique para ativar/desativar
+    button.MouseButton1Click:Connect(function()
+        controlBallAtivo = not controlBallAtivo
+
+        if controlBallAtivo then
+            -- Verde (ligado)
+            button.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            button.Text = "Control Ball v1 [ON]"
+            
+            -- Desativa aimbot personagem
+            if gyro then
+                gyro:Destroy()
+                gyro = nil
+            end
+            
+            -- Notificação
+            StarterGui:SetCore("SendNotification",{
+                Title = "Controle de Bola",
+                Text = "Ativado! Use a câmera para controlar a bola.",
+                Duration = 2
+            })
+        else
+            -- Vermelho (desligado)
+            button.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+            button.Text = "Control Ball v1"
+            
+            -- Reativa aimbot se estava ativo
+            if aimbotPersonagem then
+                ativarAimbotPersonagem(true)
+            end
+            
+            -- Volta câmera para o personagem
+            local char = player.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 5, 10), hrp.Position)
+                end
+            end
+            
+            StarterGui:SetCore("SendNotification",{
+                Title = "Controle de Bola",
+                Text = "Desativado!",
+                Duration = 2
+            })
+        end
+    end)
+
+    return button
+end
+
+-- =====================================================
+--  CRIA BOTÃO FLUTUANTE
+-- =====================================================
+local botaoFlutuante = criarBotaoFlutuante()
+
+-- =====================================================
+--  LOOP DO CONTROLE DE BOLA
+-- =====================================================
+runService.Heartbeat:Connect(function()
+    if controlBallAtivo then
+        controlarBola()
+    end
+end)
 
 -- =====================================================
 --  ESP
@@ -275,107 +375,12 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  CRIA BOTÃO FLUTUANTE
--- =====================================================
-local function criarBotaoFlutuante()
-    -- Se já existir, remove
-    if botaoFlutuante then
-        botaoFlutuante:Destroy()
-        botaoFlutuante = nil
-    end
-
-    -- Cria a ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ControlBallGUI"
-    screenGui.Parent = player.PlayerGui
-    screenGui.ResetOnSpawn = false
-
-    -- Frame principal (botão)
-    local frame = Instance.new("ImageButton")
-    frame.Name = "ControlBallButton"
-    frame.Size = UDim2.new(0, 120, 0, 40)
-    frame.Position = UDim2.new(0.5, -60, 0.8, -20) -- posição inicial
-    frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho (desligado)
-    frame.BackgroundTransparency = 0.2
-    frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
-    frame.BorderSizePixel = 2
-    frame.Parent = screenGui
-
-    -- Texto do botão
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Name = "ButtonText"
-    textLabel.Size = UDim2.new(1, 0, 1, 0)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = "Control Ball v1"
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textLabel.TextSize = 14
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.TextScaled = false
-    textLabel.Parent = frame
-
-    -- --- DRAG (arrastar) ---
-    local dragging = false
-    local dragStart = nil
-    local dragStartPos = nil
-
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            dragStartPos = frame.Position
-        end
-    end)
-
-    frame.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-
-    userInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(
-                dragStartPos.X.Scale,
-                dragStartPos.X.Offset + delta.X,
-                dragStartPos.Y.Scale,
-                dragStartPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-
-    -- --- CLICK (toggle) ---
-    frame.MouseButton1Click:Connect(function()
-        controleBolaAtivo = not controleBolaAtivo
-
-        if controleBolaAtivo then
-            frame.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Verde (ligado)
-            textLabel.Text = "Control Ball v1 [ON]"
-            -- Desativa aimbots automaticamente
-            if aimbotPersonagem then
-                ativarAimbotPersonagem(false)
-            end
-            aimbotCamera = false
-        else
-            frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho (desligado)
-            textLabel.Text = "Control Ball v1"
-            -- Reativa aimbots se estavam ligados antes? (opcional)
-            -- Vamos deixar o usuário reativar manualmente
-        end
-    end)
-
-    botaoFlutuante = screenGui
-    return screenGui
-end
-
--- =====================================================
---  LOOP PRINCIPAL (com controle de bola)
+--  LOOP PRINCIPAL
 -- =====================================================
 runService.Heartbeat:Connect(function()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     atualizarESP()
-    controlarBola() -- Nova função
 end)
 
 -- =====================================================
@@ -384,7 +389,7 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Com Controle de Bola!",
+    Text = "Com Controle de Bola! Botão flutuante criado.",
     Duration = 4
 })
 
@@ -461,32 +466,45 @@ secReach:Toggle({
     end
 })
 
--- =====================================================
---  NOVA SEÇÃO – CONTROLE DE BOLA
--- =====================================================
-local secControle = MainTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
+-- Seção Controle de Bola
+local secControlBall = MainTab:Section({ Title = "Controle de Bola", TextXAlignment = "Left" })
 
-secControle:Toggle({
-    Title = "Ativar Controle de Bola",
-    Desc = "Cria botão flutuante para controlar a bola",
+secControlBall:Toggle({
+    Title = "Controle de Bola (Toggle)",
+    Desc = "Ativa/desativa o controle da bola (mesmo do botão)",
     Callback = function(v)
-        if v then
-            criarBotaoFlutuante()
-        else
-            if botaoFlutuante then
-                botaoFlutuante:Destroy()
-                botaoFlutuante = nil
+        controlBallAtivo = v
+        if botaoFlutuante then
+            if v then
+                botaoFlutuante.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+                botaoFlutuante.Text = "Control Ball v1 [ON]"
+                if gyro then
+                    gyro:Destroy()
+                    gyro = nil
+                end
+            else
+                botaoFlutuante.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+                botaoFlutuante.Text = "Control Ball v1"
+                if aimbotPersonagem then
+                    ativarAimbotPersonagem(true)
+                end
+                local char = player.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        camera.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 5, 10), hrp.Position)
+                    end
+                end
             end
-            controleBolaAtivo = false
         end
     end
 })
 
-secControle:Slider({
+secControlBall:Slider({
     Title = "Velocidade da Bola",
-    Desc = "Velocidade ao controlar a bola",
+    Desc = "Força do controle (padrão: 20)",
     Step = 1,
-    Value = { Min = 5, Max = 50, Default = 20 },
+    Value = { Min = 1, Max = 50, Default = 20 },
     Callback = function(v)
         velocidadeBola = v
     end
