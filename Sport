@@ -1,7 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Definitivo
-    - Aimbot só desativa se VOCÊ tiver a bola
-    - Reach não deixa a bola "grandona" visualmente
+    Blue Lock Rivels Hub – Com detecção por BallAnims
 ]]
 
 local _ENV = getgenv()
@@ -51,16 +49,16 @@ local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 
 -- =====================================================
---  POSSE – APENAS PELO HasBall DO JOGADOR (SEM FALLBACK)
+--  DETECÇÃO DE POSSE PELO BallAnims (NOVO!)
 -- =====================================================
 local function euTenhoBola()
-    local model = workspace:FindFirstChild(player.Name)
-    if model then
-        local values = model:FindFirstChild("Values")
-        if values then
-            local hb = values:FindFirstChild("HasBall")
-            if hb and hb:IsA("BoolValue") then
-                return hb.Value
+    local playerFolder = workspace:FindFirstChild(player.Name)
+    if playerFolder then
+        local football = playerFolder:FindFirstChild("Football")
+        if football then
+            local ballAnims = football:FindFirstChild("BallAnims")
+            if ballAnims then
+                return true  -- bola no pé
             end
         end
     end
@@ -74,7 +72,7 @@ local function restaurarHitbox()
     local hitbox = getHitbox()
     if hitbox then
         hitbox.Size = hitboxOriginalSize
-        hitbox.Transparency = 0 -- volta ao normal
+        hitbox.Transparency = 0
     end
 end
 
@@ -98,7 +96,6 @@ local function atualizarAimbotPersonagem()
         return 
     end
     
-    -- SÓ desativa se EU tiver a bola
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -134,7 +131,7 @@ end
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
-    if euTenhoBola() then return end  -- só desativa se EU tiver
+    if euTenhoBola() then return end
     
     local hitbox = getHitbox()
     if not hitbox then return end
@@ -150,12 +147,11 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH (sem transparência, só aumenta o tamanho)
+--  REACH
 -- =====================================================
 local reachAplicado = false
 
 local function aplicarReach()
-    -- SÓ desativa se EU tiver a bola
     if euTenhoBola() or not reachAtivo then
         if reachAplicado then
             restaurarHitbox()
@@ -170,7 +166,6 @@ local function aplicarReach()
     local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
     if hitbox.Size ~= novoSize then
         hitbox.Size = novoSize
-        -- NÃO ALTERA A TRANSPARÊNCIA – fica invisível
         reachAplicado = true
     end
 end
@@ -227,7 +222,7 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Definitivo)",
+    Text = "Carregado! (BallAnims detectado)",
     Duration = 3
 })
 
@@ -254,7 +249,7 @@ local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
     Title = "Aimbot Personagem",
-    Desc = "Seu corpo vira para a bola (só desativa se VOCÊ tiver)",
+    Desc = "Seu corpo vira para a bola (desativa só se VOCÊ tiver)",
     Callback = function(v)
         ativarAimbotPersonagem(v)
     end
@@ -262,7 +257,7 @@ secAimbot:Toggle({
 
 secAimbot:Toggle({
     Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola (só desativa se VOCÊ tiver)",
+    Desc = "Câmera segue a bola (desativa só se VOCÊ tiver)",
     Callback = function(v)
         aimbotCamera = v
     end
@@ -283,7 +278,7 @@ secReach:Slider({
 
 secReach:Toggle({
     Title = "Ativar Reach",
-    Desc = "Aumenta a hitbox (invisível, só tamanho)",
+    Desc = "Aumenta a hitbox (invisível)",
     Callback = function(v)
         reachAtivo = v
         if not v then
@@ -359,4 +354,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso (definitivo)!")
+print("Blue Lock Rivels Hub carregado com sucesso (BallAnims)!")
