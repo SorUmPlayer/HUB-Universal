@@ -1,16 +1,14 @@
 --[[
-    Blue Lock Rivels Hub – Versão Estável
-    - FPS otimizado (sem lag)
-    - Aimbot preciso (corpo e câmera)
-    - Funciona com ShiftLock (opção para desativar)
-    - Stamina infinita funcionando
+    Blue Lock Rivels Hub – Versão Final
+    - Infinite Stamina com botão (funcionando)
+    - Aimbot sem limite de alcance
+    - Sem opção ShiftLock
 ]]
 
 local _ENV = getgenv()
 local player = game.Players.LocalPlayer
 local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
-local userInput = game:GetService("UserInputService")
 
 -- =====================================================
 --  DETECÇÃO DA BOLA
@@ -45,7 +43,6 @@ local aimbotCamera = false
 local reachAtivo = false
 local reachDistancia = 20
 local mostrarESP = false
-local desativarShiftLock = false
 
 local gyro = nil
 local cameraSmooth = 0.15
@@ -80,7 +77,7 @@ local function atualizarCachePosse()
             end
         end
     end
-    -- Fallback: verifica distância (apenas uma vez para cache)
+    -- Fallback: verifica distância
     local hitbox = getHitbox()
     if not hitbox then 
         hasBallCache = false
@@ -148,12 +145,6 @@ local function atualizarAimbotPersonagem()
     local hitbox = getHitbox()
     if not hitbox then return end
 
-    -- Desativa ShiftLock se ativado
-    if desativarShiftLock and userInput:GetFocused() then
-        -- Simula pressionar Shift para desativar (se o jogo usar)
-        -- Ou simplesmente ignoramos, pois BodyGyro força a rotação
-    end
-
     if not gyro then
         gyro = Instance.new("BodyGyro")
         gyro.Parent = hrp
@@ -169,7 +160,7 @@ local function atualizarAimbotPersonagem()
 end
 
 -- =====================================================
---  AIMBOT CÂMERA
+--  AIMBOT CÂMERA (SEM LIMITE DE ALCANCE)
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
@@ -185,8 +176,8 @@ local function atualizarAimbotCamera()
     
     local posBola = hitbox.Position
     local posCamera = camera.CFrame.Position
-    if (posCamera - posBola).Magnitude > 100 then return end
     
+    -- REMOVIDO O LIMITE DE ALCANCE (antes tinha if dist > 100)
     local novaPos = posCamera:Lerp(posBola, cameraSmooth)
     camera.CFrame = CFrame.new(novaPos, posBola)
 end
@@ -263,28 +254,12 @@ runService.Heartbeat:Connect(function()
 end)
 
 -- =====================================================
---  INFINITE STAMINA
--- =====================================================
-task.spawn(function()
-    while true do
-        local stats = player:FindFirstChild("PlayerStats")
-        if stats then
-            local stamina = stats:FindFirstChild("Stamina")
-            if stamina and stamina:IsA("NumberValue") then
-                stamina.Value = 100
-            end
-        end
-        task.wait(0.3)
-    end
-end)
-
--- =====================================================
 --  UI – WindUI
 -- =====================================================
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Carregado! (Estável)",
+    Text = "Carregado! (Versão Final)",
     Duration = 3
 })
 
@@ -320,17 +295,9 @@ secAimbot:Toggle({
 
 secAimbot:Toggle({
     Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola (sem bug ao chutar)",
+    Desc = "Câmera segue a bola (sem limite de alcance)",
     Callback = function(v)
         aimbotCamera = v
-    end
-})
-
-secAimbot:Toggle({
-    Title = "Desativar ShiftLock",
-    Desc = "Força a rotação mesmo com ShiftLock ativo",
-    Callback = function(v)
-        desativarShiftLock = v
     end
 })
 
@@ -374,6 +341,27 @@ secReach:Toggle({
 -- Seção Extras
 local secExtras = MainTab:Section({ Title = "Extras", TextXAlignment = "Left" })
 
+-- =====================================================
+--  BOTÃO INFINITE STAMINA (FUNCIONANDO)
+-- =====================================================
+secExtras:Button({
+    Title = "Infinite Stamina",
+    Desc = "No Decrease In Stamina",
+    Callback = function()
+        task.spawn(function()
+            while true do
+                local player = game:GetService("Players").LocalPlayer
+                
+                if player:FindFirstChild("PlayerStats") and player.PlayerStats:FindFirstChild("Stamina") then
+                    player.PlayerStats.Stamina.Value = 100
+                end
+                
+                task.wait()
+            end
+        end)
+    end
+})
+
 secExtras:Dropdown({
     Title = "Time",
     Desc = "Selecione para o gol",
@@ -409,4 +397,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub carregado com sucesso (corrigido)!")
+print("Blue Lock Rivels Hub carregado com sucesso (versão final)!")
