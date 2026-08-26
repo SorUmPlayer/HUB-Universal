@@ -1,5 +1,5 @@
 --[[
-    Blue Lock Rivels Hub – Com aimbot do código fornecido
+    Blue Lock Rivels Hub – Aimbot Câmera estilo "atrás do personagem"
 ]]
 
 local Players = game:GetService("Players")
@@ -12,9 +12,28 @@ local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
 -- =====================================================
+--  FUNÇÃO SEGURA DE PARENT
+-- =====================================================
+local function safeParent(gui)
+    local ok = pcall(function()
+        if gethui then
+            gui.Parent = gethui()
+        elseif syn and syn.protect_gui then
+            syn.protect_gui(gui)
+            gui.Parent = CoreGui
+        else
+            gui.Parent = CoreGui
+        end
+    end)
+    if not ok then
+        gui.Parent = player:WaitForChild("PlayerGui")
+    end
+end
+
+-- =====================================================
 --  REFERÊNCIAS DA BOLA (CACHE)
 -- =====================================================
-local target = nil
+local bola = nil
 local hitbox = nil
 local bolaValida = false
 
@@ -23,21 +42,21 @@ local function atualizarReferenciaBola()
         if child:IsA("Model") then
             local football = child:FindFirstChild("Football")
             if football then
-                target = football
-                local hb = target:FindFirstChild("Hitbox")
-                hitbox = (hb and hb:IsA("BasePart")) and hb or target
+                bola = football
+                local hb = bola:FindFirstChild("Hitbox")
+                hitbox = (hb and hb:IsA("BasePart")) and hb or bola
                 bolaValida = true
                 return
             end
         elseif child.Name == "Football" then
-            target = child
-            local hb = target:FindFirstChild("Hitbox")
-            hitbox = (hb and hb:IsA("BasePart")) and hb or target
+            bola = child
+            local hb = bola:FindFirstChild("Hitbox")
+            hitbox = (hb and hb:IsA("BasePart")) and hb or bola
             bolaValida = true
             return
         end
     end
-    target = nil
+    bola = nil
     hitbox = nil
     bolaValida = false
 end
@@ -64,44 +83,15 @@ local function getBall()
 end
 
 -- =====================================================
---  POSSE DA BOLA (via HasBall)
+--  POSSE DA BOLA
 -- =====================================================
-local hasBallValue = nil
-local hasBallCache = false
-
-local function atualizarHasBall()
-    local model = Workspace:FindFirstChild(player.Name)
-    if model then
-        local values = model:FindFirstChild("Values")
-        if values then
-            local hb = values:FindFirstChild("HasBall")
-            if hb and hb:IsA("BoolValue") then
-                if hasBallValue ~= hb then
-                    hasBallValue = hb
-                    hasBallValue:GetPropertyChangedSignal("Value"):Connect(function()
-                        hasBallCache = hasBallValue.Value
-                    end)
-                end
-                hasBallCache = hb.Value
-                return
-            end
-        end
+local function euTenhoBola()
+    local meuModel = Workspace:FindFirstChild(player.Name)
+    if meuModel and meuModel:FindFirstChild("Football") then
+        return true
     end
-    -- Fallback: verifica distância (menos confiável)
-    if hitbox and player.Character then
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hasBallCache = (hrp.Position - hitbox.Position).Magnitude < 2.5
-            return
-        end
-    end
-    hasBallCache = false
+    return false
 end
-
-atualizarHasBall()
-
--- Fallback: atualiza a cada frame para garantir
-RunService.Heartbeat:Connect(atualizarHasBall)
 
 -- =====================================================
 --  VARIÁVEIS DE CONTROLE
@@ -118,8 +108,7 @@ local controlConnection = nil
 local controlScreenGui = nil
 local toggleButton = nil
 
-local connectionAimbot = nil
-local cameraSmooth = 0.08
+local gyro = nil
 local selectedTeam = nil
 
 local espSphere = nil
@@ -127,71 +116,12 @@ local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
 local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  AIMBOT PERSONAGEM (LÓGICA DO CÓDIGO FORNECIDO)
--- =====================================================
-local function updateView()
-    -- Só executa se aimbotPersonagem estiver ativo, não tiver bola, e tiver referência válida
-    if not aimbotPersonagem then return end
-    if hasBallCache then return end  -- se estiver com a bola, não gira
-    if not player.Character or not target then return end
-
-    local character = player.Character
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChild("Humanoid")
-
-    if rootPart and humanoid then
-        -- Usa a posição da hitbox (se existir) ou da própria bola
-        local posAlvo = hitbox and hitbox.Position or target.Position
-        local targetPosition = Vector3.new(posAlvo.X, rootPart.Position.Y, posAlvo.Z)
-        local direction = (targetPosition - rootPart.Position).Unit
-        rootPart.CFrame = CFrame.new(rootPart.Position, rootPart.Position + direction)
-        
-        -- Câmera também segue (se aimbotCamera estiver ativo, usamos a lógica separada)
-        -- Aqui a câmera é opcional, mas mantemos a do código fornecido como fallback
-        if not aimbotCamera then
-            camera.CFrame = CFrame.new(
-                rootPart.Position - direction * 10 + Vector3.new(0, 5, 0), 
-                rootPart.Position
-            )
-        end
-    end
-end
-
-local function toggleAimbotPersonagem(estado)
-    aimbotPersonagem = estado
-    
-    if estado then
-        if connectionAimbot then connectionAimbot:Disconnect() end
-        connectionAimbot = RunService.RenderStepped:Connect(updateView)
-    else
-        if connectionAimbot then
-            connectionAimbot:Disconnect()
-            connectionAimbot = nil
-        end
-    end
-end
-
--- =====================================================
---  AIMBOT CÂMERA (SEPARADO)
--- =====================================================
-local function atualizarAimbotCamera()
-    if isControlActive then return end
-    if not aimbotCamera or hasBallCache or not bolaValida or not hitbox then return end
-    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then return end
-
-    local posBola = hitbox.Position
-    local posCamera = camera.CFrame.Position
-    local novaPos = posCamera:Lerp(posBola, cameraSmooth)
-    camera.CFrame = CFrame.new(novaPos, posBola)
-end
-
--- =====================================================
 --  CONTROLE DA HITBOX (UNIFICADO)
 -- =====================================================
 local function aplicarTamanhoHitbox()
     if not hitbox then return end
 
-    local tenho = hasBallCache
+    local tenho = euTenhoBola()
     local tamanhoDesejado
     local transparenciaDesejada
 
@@ -261,22 +191,6 @@ local function toggleControl()
     end
 end
 
-local function safeParent(gui)
-    local ok = pcall(function()
-        if gethui then
-            gui.Parent = gethui()
-        elseif syn and syn.protect_gui then
-            syn.protect_gui(gui)
-            gui.Parent = CoreGui
-        else
-            gui.Parent = CoreGui
-        end
-    end)
-    if not ok then
-        gui.Parent = player:WaitForChild("PlayerGui")
-    end
-end
-
 local function criarBotaoFlutuante()
     if controlScreenGui then return end
 
@@ -319,10 +233,71 @@ local function removerBotaoFlutuante()
 end
 
 -- =====================================================
+--  AIMBOT PERSONAGEM (BodyGyro)
+-- =====================================================
+local function ativarAimbotPersonagem(estado)
+    aimbotPersonagem = estado
+    if not estado and gyro then
+        gyro:Destroy()
+        gyro = nil
+    end
+end
+
+local function atualizarAimbotPersonagem()
+    if not aimbotPersonagem or euTenhoBola() or not bolaValida or not hitbox then
+        if gyro then
+            gyro:Destroy()
+            gyro = nil
+        end
+        return
+    end
+
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if not gyro then
+        gyro = Instance.new("BodyGyro")
+        gyro.Parent = hrp
+        gyro.D = 1000
+        gyro.P = 10000
+        gyro.MaxTorque = Vector3.new(8000, 8000, 8000)
+    end
+
+    local posBola = hitbox.Position
+    local posJogador = hrp.Position
+    local direcao = (Vector3.new(posBola.X, posJogador.Y, posBola.Z) - posJogador).Unit
+    gyro.CFrame = CFrame.lookAt(posJogador, posJogador + direcao)
+end
+
+-- =====================================================
+--  AIMBOT CÂMERA (ESTILO "ATRÁS DO PERSONAGEM")
+-- =====================================================
+local function atualizarAimbotCamera()
+    if isControlActive then return end
+    if not aimbotCamera or euTenhoBola() or not bolaValida or not hitbox then return end
+
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- Calcula a direção para a bola (mesmo usado no BodyGyro)
+    local posBola = hitbox.Position
+    local posJogador = hrp.Position
+    local direction = (Vector3.new(posBola.X, posJogador.Y, posBola.Z) - posJogador).Unit
+
+    -- Coloca a câmera atrás do personagem, olhando para ele
+    local camPos = hrp.Position - direction * 10 + Vector3.new(0, 5, 0)
+    camera.CFrame = CFrame.new(camPos, hrp.Position)
+end
+
+-- =====================================================
 --  ESP
 -- =====================================================
 local function atualizarESP()
-    if hasBallCache or not mostrarESP or not hitbox then
+    if euTenhoBola() or not mostrarESP or not hitbox then
         if espSphere then
             espSphere:Destroy()
             espSphere = nil
@@ -347,9 +322,9 @@ end
 --  LOOP PRINCIPAL
 -- =====================================================
 RunService.Heartbeat:Connect(function()
+    atualizarAimbotPersonagem()
     atualizarAimbotCamera()
     atualizarESP()
-    -- O aimbot personagem é atualizado pelo connectionAimbot via RenderStepped
 end)
 
 -- =====================================================
@@ -413,15 +388,15 @@ local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
     Title = "Aimbot Personagem (Grudado)",
-    Desc = "Corpo vira para a bola (usa CFrame, desativa ao pegar)",
+    Desc = "Corpo vira para a bola",
     Callback = function(v)
-        toggleAimbotPersonagem(v)
+        ativarAimbotPersonagem(v)
     end
 })
 
 secAimbot:Toggle({
-    Title = "Aimbot Câmera (Rápida)",
-    Desc = "Câmera segue a bola",
+    Title = "Aimbot Câmera (Estilo antigo)",
+    Desc = "Câmera atrás do personagem olhando para a bola",
     Callback = function(v)
         aimbotCamera = v
     end
@@ -531,7 +506,7 @@ secExtras:Button({
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification",{
         Title = "Blue Lock Rivels",
-        Text = "Aimbot do código fornecido integrado!",
+        Text = "Aimbot câmera estilo antigo integrado!",
         Duration = 4
     })
 end)
