@@ -1,5 +1,9 @@
 --[[
-    Blue Lock Rivels Hub – Sem bola gigante
+    Blue Lock Rivels Hub – Definitivo
+    - Reset da hitbox a cada 0.3s (evita bola gigante)
+    - Aimbot só desativa se VOCÊ estiver com a bola (verificação exclusiva por Workspace)
+    - Força do BodyGyro aumentada
+    - Câmera mais rápida
 ]]
 
 local _ENV = getgenv()
@@ -8,103 +12,80 @@ local camera = game.Workspace.CurrentCamera
 local runService = game:GetService("RunService")
 
 -- =====================================================
---  DETECÇÃO DA BOLA E HITBOX (SEPARADAS)
+--  REFERÊNCIAS DA BOLA (CACHE)
 -- =====================================================
-local bolaVisual = nil
+local bola = nil
 local hitbox = nil
-local hitboxCriada = false
+local bolaValida = false
 
-local function encontrarBola()
-    -- Procura a bola visual (qualquer parte com "ball" no nome)
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():match("ball") then
-            bolaVisual = obj
-            -- Tenta achar um filho chamado "Hitbox"
-            local hb = obj:FindFirstChild("Hitbox")
+-- =====================================================
+--  ATUALIZA REFERÊNCIA DA BOLA (EVENTOS)
+-- =====================================================
+local function atualizarReferenciaBola()
+    -- Procura bola solta ou em posse de alguém
+    for _, child in ipairs(workspace:GetChildren()) do
+        if child:IsA("Model") then
+            -- Se for um jogador, verifica se tem Football
+            local football = child:FindFirstChild("Football")
+            if football then
+                bola = football
+                local hb = bola:FindFirstChild("Hitbox")
+                if hb and hb:IsA("BasePart") then
+                    hitbox = hb
+                else
+                    hitbox = bola
+                end
+                bolaValida = true
+                return
+            end
+        elseif child.Name == "Football" then
+            -- Bola solta
+            bola = child
+            local hb = bola:FindFirstChild("Hitbox")
             if hb and hb:IsA("BasePart") then
                 hitbox = hb
             else
-                -- Se não tem hitbox, CRIAMOS UMA HITBOX INVISÍVEL
-                if not hitboxCriada then
-                    hitbox = Instance.new("Part")
-                    hitbox.Name = "Hitbox"
-                    hitbox.Size = Vector3.new(1.4, 1.4, 1.4)
-                    hitbox.Transparency = 1
-                    hitbox.CanCollide = false
-                    hitbox.Anchored = true
-                    hitbox.Parent = obj
-                    hitboxCriada = true
-                end
-                -- Atualiza a posição da hitbox para seguir a bola visual
-                if hitbox then
-                    hitbox.CFrame = obj.CFrame
-                end
+                hitbox = bola
             end
+            bolaValida = true
             return
         end
     end
-    -- Se não achou bola, reseta
-    bolaVisual = nil
+    -- Se não achou, invalida
+    bola = nil
     hitbox = nil
+    bolaValida = false
 end
 
--- Atualiza a posição da hitbox (se criada) a cada frame
-local function atualizarPosicaoHitbox()
-    if hitbox and hitboxCriada and bolaVisual then
-        hitbox.CFrame = bolaVisual.CFrame
-    end
-end
+-- Eventos para capturar mudanças
+workspace.ChildAdded:Connect(atualizarReferenciaBola)
+workspace.ChildRemoved:Connect(atualizarReferenciaBola)
 
--- Encontra a bola inicial
-encontrarBola()
-
--- Escuta mudanças no workspace para detectar quando a bola aparece/desaparece
-workspace.ChildAdded:Connect(encontrarBola)
-workspace.ChildRemoved:Connect(encontrarBola)
--- Também escuta mudanças dentro dos modelos (jogadores)
+-- Também escuta modelos (jogadores)
 for _, child in ipairs(workspace:GetChildren()) do
     if child:IsA("Model") then
-        child.ChildAdded:Connect(encontrarBola)
-        child.ChildRemoved:Connect(encontrarBola)
+        child.ChildAdded:Connect(atualizarReferenciaBola)
+        child.ChildRemoved:Connect(atualizarReferenciaBola)
     end
 end
 
--- =====================================================
---  POSSE (Workspace + Distância)
--- =====================================================
-local tenhoBolaCache = false
-local lastPosseCheck = 0
-local posseCheckInterval = 0.2
+-- Inicializa
+atualizarReferenciaBola()
 
+-- =====================================================
+--  POSSE – APENAS POR Workspace.SeuNome.Football
+-- =====================================================
 local function euTenhoBola()
-    local now = tick()
-    if now - lastPosseCheck < posseCheckInterval then
-        return tenhoBolaCache
-    end
-    lastPosseCheck = now
-
-    -- 1) Workspace.SeuNome.Football existe?
+    -- Verifica se o modelo do jogador tem um filho "Football"
     local meuModel = workspace:FindFirstChild(player.Name)
     if meuModel and meuModel:FindFirstChild("Football") then
-        tenhoBolaCache = true
         return true
     end
-
-    -- 2) Distância da hitbox < 2.5
-    if hitbox and player.Character then
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp and (hrp.Position - hitbox.Position).Magnitude < 2.5 then
-            tenhoBolaCache = true
-            return true
-        end
-    end
-
-    tenhoBolaCache = false
     return false
 end
 
 -- =====================================================
---  VARIÁVEIS
+--  VARIÁVEIS DE CONTROLE
 -- =====================================================
 local aimbotPersonagem = false
 local aimbotCamera = false
@@ -113,23 +94,37 @@ local reachDistancia = 20
 local mostrarESP = false
 
 local gyro = nil
-local cameraSmooth = 0.15
+local cameraSmooth = 0.08  -- mais rápido
 local selectedTeam = nil
 
 local espSphere = nil
 local hitboxOriginalSize = Vector3.new(1.4, 1.4, 1.4)
+local hitboxOriginalTransparency = 0
 
 -- =====================================================
---  RESTAURA HITBOX
+--  RESET DA HITBOX (a cada 0.3 segundos)
 -- =====================================================
-local function restaurarHitbox()
-    if hitbox then
-        hitbox.Size = hitboxOriginalSize
+task.spawn(function()
+    while true do
+        task.wait(0.3)  -- a cada 0.3 segundos
+        if hitbox then
+            -- Se o reach estiver desativado OU se eu tiver a bola, restaura
+            if not reachAtivo or euTenhoBola() then
+                if hitbox.Size ~= hitboxOriginalSize or hitbox.Transparency ~= hitboxOriginalTransparency then
+                    hitbox.Size = hitboxOriginalSize
+                    hitbox.Transparency = hitboxOriginalTransparency
+                end
+            else
+                -- Se reach ativo, mantém grande (invisível)
+                hitbox.Size = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
+                hitbox.Transparency = 1
+            end
+        end
     end
-end
+end)
 
 -- =====================================================
---  AIMBOT PERSONAGEM
+--  AIMBOT PERSONAGEM (Força máxima)
 -- =====================================================
 local function ativarAimbotPersonagem(estado)
     aimbotPersonagem = estado
@@ -148,6 +143,7 @@ local function atualizarAimbotPersonagem()
         return
     end
 
+    -- SÓ desativa se EU tiver a bola (verificação exclusiva)
     if euTenhoBola() then
         if gyro then
             gyro:Destroy()
@@ -156,7 +152,13 @@ local function atualizarAimbotPersonagem()
         return
     end
 
-    if not hitbox then return end
+    if not bolaValida or not hitbox then
+        if gyro then
+            gyro:Destroy()
+            gyro = nil
+        end
+        return
+    end
 
     local char = player.Character
     if not char then return end
@@ -166,9 +168,9 @@ local function atualizarAimbotPersonagem()
     if not gyro then
         gyro = Instance.new("BodyGyro")
         gyro.Parent = hrp
-        gyro.D = 500
-        gyro.P = 5000
-        gyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+        gyro.D = 1000      -- mais forte
+        gyro.P = 10000     -- mais forte
+        gyro.MaxTorque = Vector3.new(8000, 8000, 8000)
     end
 
     local posBola = hitbox.Position
@@ -178,14 +180,15 @@ local function atualizarAimbotPersonagem()
 end
 
 -- =====================================================
---  AIMBOT CÂMERA
+--  AIMBOT CÂMERA (mais rápida)
 -- =====================================================
 local function atualizarAimbotCamera()
     if not aimbotCamera then return end
     if euTenhoBola() then return end
-    if not hitbox then return end
+    if not bolaValida or not hitbox then return end
 
-    if hitbox.AssemblyLinearVelocity.Magnitude > 60 then
+    -- Ignora chutes fortes (acima de 80)
+    if hitbox.AssemblyLinearVelocity.Magnitude > 80 then
         return
     end
 
@@ -196,32 +199,7 @@ local function atualizarAimbotCamera()
 end
 
 -- =====================================================
---  REACH (APENAS NA HITBOX, NUNCA NA BOLA VISUAL)
--- =====================================================
-local reachAplicado = false
-
-local function aplicarReach()
-    if euTenhoBola() or not reachAtivo then
-        if reachAplicado then
-            restaurarHitbox()
-            reachAplicado = false
-        end
-        return
-    end
-
-    if not hitbox then return end
-
-    local novoSize = Vector3.new(reachDistancia, reachDistancia, reachDistancia)
-    if hitbox.Size ~= novoSize then
-        hitbox.Size = novoSize
-        reachAplicado = true
-    else
-        reachAplicado = true
-    end
-end
-
--- =====================================================
---  ESP (CÍRCULO VERDE NA HITBOX)
+--  ESP (verde)
 -- =====================================================
 local function atualizarESP()
     if euTenhoBola() or not mostrarESP or not hitbox then
@@ -246,24 +224,11 @@ local function atualizarESP()
 end
 
 -- =====================================================
---  LOOP PRINCIPAL (com throttling)
+--  LOOP PRINCIPAL (fps otimizado)
 -- =====================================================
-local frameCounter = 0
-local framesToSkip = 2
-
 runService.Heartbeat:Connect(function()
-    frameCounter = frameCounter + 1
-    if frameCounter % (framesToSkip + 1) ~= 0 then
-        return
-    end
-
-    -- Mantém a hitbox (se criada) na posição da bola visual
-    atualizarPosicaoHitbox()
-
-    euTenhoBola()
     atualizarAimbotPersonagem()
     atualizarAimbotCamera()
-    aplicarReach()
     atualizarESP()
 end)
 
@@ -273,8 +238,8 @@ end)
 local StarterGui = game:GetService("StarterGui")
 StarterGui:SetCore("SendNotification",{
     Title = "Blue Lock Rivels",
-    Text = "Sem bola gigante!",
-    Duration = 3
+    Text = "Definitivo – Bola resetada + Aimbot grudado!",
+    Duration = 4
 })
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -299,16 +264,16 @@ local MainTab = Window:Tab({ Title = "Blue Lock Rivels", Icon = "home" })
 local secAimbot = MainTab:Section({ Title = "Aimbot", TextXAlignment = "Left" })
 
 secAimbot:Toggle({
-    Title = "Aimbot Personagem",
-    Desc = "Corpo vira para a bola",
+    Title = "Aimbot Personagem (Grudado)",
+    Desc = "Corpo vira para a bola – só desativa se VOCÊ tiver",
     Callback = function(v)
         ativarAimbotPersonagem(v)
     end
 })
 
 secAimbot:Toggle({
-    Title = "Aimbot Câmera",
-    Desc = "Câmera segue a bola",
+    Title = "Aimbot Câmera (Rápida)",
+    Desc = "Câmera segue a bola – não desativa em chutes",
     Callback = function(v)
         aimbotCamera = v
     end
@@ -325,8 +290,7 @@ secReach:Slider({
     Callback = function(v)
         reachDistancia = v
         if espSphere then
-            local scale = reachDistancia / 2.5
-            espSphere.Scale = Vector3.new(scale, scale, scale)
+            espSphere.Scale = Vector3.new(v / 2.5, v / 2.5, v / 2.5)
         end
     end
 })
@@ -336,16 +300,12 @@ secReach:Toggle({
     Desc = "Aumenta a hitbox (invisível)",
     Callback = function(v)
         reachAtivo = v
-        if not v then
-            restaurarHitbox()
-            reachAplicado = false
-        end
     end
 })
 
 secReach:Toggle({
     Title = "Mostrar Área (ESP)",
-    Desc = "Círculo verde na hitbox",
+    Desc = "Círculo verde em volta da bola",
     Callback = function(v)
         mostrarESP = v
         if not v and espSphere then
@@ -409,4 +369,4 @@ secExtras:Button({
     end
 })
 
-print("Blue Lock Rivels Hub – sem bola gigante carregado!")
+print("Blue Lock Rivels Hub – Definitivo carregado!")
